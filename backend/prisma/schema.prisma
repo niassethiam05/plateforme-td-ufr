@@ -1,0 +1,282 @@
+// Schema Prisma - Plateforme de gestion des fiches de TD de l'UFR
+// Hierarchie : Formation -> Level -> Semester -> Subject -> TdFile
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum TdFileStatus {
+  DRAFT
+  PENDING
+  VALIDATED
+  REJECTED
+  PUBLISHED
+}
+
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+enum NotificationType {
+  TD_PUBLISHED
+  TD_VALIDATED
+  TD_REJECTED
+  TD_NEEDS_CHANGES
+  REPORT_UPDATE
+  GENERAL
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  role         Role
+  avatarUrl    String?  @map("avatar_url")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  student       Student?
+  teacher       Teacher?
+  favorites     Favorite[]
+  downloads     Download[]
+  notifications Notification[]
+  reports       Report[]
+
+  @@map("users")
+}
+
+model Student {
+  id            String   @id @default(uuid())
+  userId        String   @unique @map("user_id")
+  formationId   String   @map("formation_id")
+  levelId       String   @map("level_id")
+  studentNumber String?  @map("student_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  formation Formation @relation(fields: [formationId], references: [id])
+  level     Level     @relation(fields: [levelId], references: [id])
+
+  @@map("students")
+}
+
+model Teacher {
+  id         String   @id @default(uuid())
+  userId     String   @unique @map("user_id")
+  department String?
+  bio        String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjects Subject[]
+  tdFiles  TdFile[]
+
+  @@map("teachers")
+}
+
+model AcademicYear {
+  id        String   @id @default(uuid())
+  label     String   @unique // ex: "2025-2026"
+  startDate DateTime @map("start_date")
+  endDate   DateTime @map("end_date")
+  isCurrent Boolean  @default(false) @map("is_current")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  semesters Semester[]
+  tdFiles   TdFile[]
+
+  @@map("academic_years")
+}
+
+model Formation {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  levels   Level[]
+  students Student[]
+
+  @@map("formations")
+}
+
+model Level {
+  id          String   @id @default(uuid())
+  formationId String   @map("formation_id")
+  name        String // L1, L2, L3, M1, M2
+  order       Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  formation Formation  @relation(fields: [formationId], references: [id], onDelete: Cascade)
+  semesters Semester[]
+  students  Student[]
+
+  @@unique([formationId, name])
+  @@map("levels")
+}
+
+model Semester {
+  id             String   @id @default(uuid())
+  levelId        String   @map("level_id")
+  academicYearId String   @map("academic_year_id")
+  name           String // S1, S2, ...
+  order          Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  level        Level        @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  subjects     Subject[]
+
+  @@unique([levelId, academicYearId, name])
+  @@map("semesters")
+}
+
+model Subject {
+  id            String   @id @default(uuid())
+  semesterId    String   @map("semester_id")
+  name          String
+  code          String?
+  mainTeacherId String?  @map("main_teacher_id")
+  description   String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  semester    Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  mainTeacher Teacher? @relation(fields: [mainTeacherId], references: [id])
+  tdFiles     TdFile[]
+
+  @@map("subjects")
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tdFiles TdFileCategory[]
+
+  @@map("categories")
+}
+
+model TdFile {
+  id             String       @id @default(uuid())
+  subjectId      String       @map("subject_id")
+  teacherId      String       @map("teacher_id")
+  title          String
+  description    String?
+  tdNumber       Int?         @map("td_number")
+  academicYearId String       @map("academic_year_id")
+  fileKey        String       @map("file_key") // cle objet dans le bucket S3/MinIO (prive)
+  fileSize       Int          @map("file_size")
+  fileType       String       @map("file_type")
+  coverImageKey  String?      @map("cover_image_key") // cle objet couverture (prive)
+  status         TdFileStatus @default(DRAFT)
+  adminComment   String?      @map("admin_comment")
+  downloadCount  Int          @default(0) @map("download_count")
+  viewCount      Int          @default(0) @map("view_count")
+  publishedAt    DateTime?    @map("published_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  subject      Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher      Teacher          @relation(fields: [teacherId], references: [id])
+  academicYear AcademicYear     @relation(fields: [academicYearId], references: [id])
+  categories   TdFileCategory[]
+  favorites    Favorite[]
+  downloads    Download[]
+  reports      Report[]
+
+  @@index([subjectId])
+  @@index([teacherId])
+  @@index([academicYearId])
+  @@index([status])
+  @@map("td_files")
+}
+
+// Table de jointure explicite N-N entre TdFile et Category
+model TdFileCategory {
+  tdFileId   String @map("td_file_id")
+  categoryId String @map("category_id")
+
+  tdFile   TdFile   @relation(fields: [tdFileId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([tdFileId, categoryId])
+  @@map("td_file_categories")
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tdFileId  String   @map("td_file_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tdFile TdFile @relation(fields: [tdFileId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tdFileId])
+  @@map("favorites")
+}
+
+model Download {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  tdFileId     String   @map("td_file_id")
+  downloadedAt DateTime @default(now()) @map("downloaded_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tdFile TdFile @relation(fields: [tdFileId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tdFileId])
+  @@map("downloads")
+}
+
+model Notification {
+  id        String            @id @default(uuid())
+  userId    String            @map("user_id")
+  title     String
+  message   String
+  type      NotificationType  @default(GENERAL)
+  link      String?
+  isRead    Boolean           @default(false) @map("is_read")
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+model Report {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  tdFileId    String       @map("td_file_id")
+  reason      String
+  description String?
+  status      ReportStatus @default(PENDING)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  resolvedAt  DateTime?    @map("resolved_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tdFile TdFile @relation(fields: [tdFileId], references: [id], onDelete: Cascade)
+
+  @@map("reports")
+}
