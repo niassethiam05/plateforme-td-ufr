@@ -62,6 +62,7 @@ const adminLinks = [
   { to: "/admin/validation", label: "Validation" },
   { to: "/admin/signalements", label: "Signalements" },
   { to: "/admin/statistiques", label: "Statistiques" },
+  { to: "/admin/profil", label: "Mon profil" },
 ];
 
 export function AppRouter() {
@@ -116,6 +117,7 @@ export function AppRouter() {
           <Route path="/admin/validation" element={<ValidationPage />} />
           <Route path="/admin/signalements" element={<ReportsPage />} />
           <Route path="/admin/statistiques" element={<AdminDashboard />} />
+          <Route path="/admin/profil" element={<ProfilePage />} />
         </Route>
       </Route>
 
