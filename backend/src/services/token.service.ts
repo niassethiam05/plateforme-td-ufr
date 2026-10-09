@@ -69,6 +69,90 @@ export async function issueTokensInFamily(
 }
 
 /**
+ * Fenetre pendant laquelle un jeton deja consomme par une rotation est encore
+ * tolere (voir isConcurrentRefresh).
+ */
+const CONCURRENT_REFRESH_GRACE_MS = 10_000;
+
+/**
+ * Rotation : consomme le jeton presente et emet son successeur dans la meme
+ * famille, de facon atomique.
+ *
+ * Le jeton est "reclame" par un UPDATE conditionnel (revokedAt IS NULL). Si
+ * deux requetes presentent le meme jeton au meme instant — deux onglets qui se
+ * rechargent ensemble — une seule obtient la ligne ; l'autre recoit `null` et
+ * l'appelant decide quoi faire (voir isConcurrentRefresh). Avant, les deux
+ * lisaient le jeton comme valide, et la seconde tombait sur un jeton revoque :
+ * elle etait prise pour un vol et toute la famille etait revoquee.
+ *
+ * La revocation et la creation du successeur sont dans la meme transaction :
+ * un jeton consomme a toujours un successeur visible, ce dont depend
+ * isConcurrentRefresh.
+ */
+export async function rotateRefreshToken(
+  tokenId: string,
+  familyId: string,
+  userId: string,
+  role: Role,
+  sessionVersion: number
+): Promise<TokenPair | null> {
+  const jti = crypto.randomUUID();
+  const accessToken = signAccessToken({ sub: userId, role, sv: sessionVersion });
+  const refreshToken = signRefreshToken({ sub: userId, role, sv: sessionVersion, jti, fam: familyId });
+
+  const claimed = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.refreshToken.updateMany({
+      where: { id: tokenId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (count === 0) return false;
+
+    await tx.refreshToken.create({
+      data: {
+        id: jti,
+        userId,
+        familyId,
+        tokenHash: hashRefreshToken(refreshToken),
+        expiresAt: new Date(Date.now() + REFRESH_MAX_AGE_MS),
+      },
+    });
+    return true;
+  });
+
+  return claimed ? { accessToken, refreshToken } : null;
+}
+
+/**
+ * Un jeton deja consomme est-il presente par une requete concurrente legitime
+ * plutot que rejoue par un voleur ?
+ *
+ * Oui si les deux conditions sont reunies :
+ * - il a ete consomme il y a moins de 10 s : c'est l'ecart entre deux onglets
+ *   du meme navigateur, pas celui d'un jeton vole reutilise plus tard ;
+ * - sa famille a encore un jeton actif : apres une deconnexion ou une
+ *   detection de vol, toute la famille est revoquee et cette tolerance ne
+ *   s'applique donc jamais.
+ *
+ * Compromis assume : un jeton vole et rejoue dans les 10 s qui suivent sa
+ * rotation legitime n'est pas detecte. Sans cette fenetre, ouvrir deux onglets
+ * suffisait a deconnecter l'utilisateur.
+ */
+export async function isConcurrentRefresh(tokenId: string, familyId: string): Promise<boolean> {
+  // Relecture : l'appelant peut avoir lu la ligne avant qu'elle soit consommee.
+  const token = await prisma.refreshToken.findUnique({
+    where: { id: tokenId },
+    select: { revokedAt: true },
+  });
+  if (!token?.revokedAt) return false;
+  if (Date.now() - token.revokedAt.getTime() > CONCURRENT_REFRESH_GRACE_MS) return false;
+
+  const active = await prisma.refreshToken.count({
+    where: { familyId, revokedAt: null, expiresAt: { gt: new Date() } },
+  });
+  return active > 0;
+}
+
+/**
  * Revoque une famille entiere de refresh tokens.
  * Utilise au logout (l'utilisateur demande la fermeture de session) et lors
  * d'une detection de rejeu : si un token deja revoque est represente, c'est

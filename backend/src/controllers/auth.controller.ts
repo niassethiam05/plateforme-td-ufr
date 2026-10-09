@@ -5,8 +5,10 @@ import { prisma } from "../config/prisma";
 import { NotFoundError, UnauthorizedError } from "../utils/AppError";
 import { hashRefreshToken, verifyRefreshToken } from "../utils/jwt";
 import {
+  isConcurrentRefresh,
   issueTokensInFamily,
   revokeFamily,
+  rotateRefreshToken,
   REFRESH_COOKIE_MAX_AGE_MS,
 } from "../services/token.service";
 
@@ -95,6 +97,9 @@ export async function logout(req: Request, res: Response) {
  * revoquee, c'est qu'il a ete rejoue apres sa rotation. On presume le vol et
  * on revoque toute la famille, ce qui deconnecte l'attaquant comme la victime.
  * Sans ce cas, le rejeu serait permanent et silencieusement tolerated.
+ *
+ * Exception : deux requetes legitimes quasi simultanees (deux onglets) ne
+ * sont pas un rejeu, voir token.service.isConcurrentRefresh.
  */
 export async function refresh(req: Request, res: Response) {
   const token = req.cookies?.[REFRESH_COOKIE_NAME];
@@ -121,13 +126,6 @@ export async function refresh(req: Request, res: Response) {
     throw new UnauthorizedError("Session expirée, veuillez vous reconnecter");
   }
 
-  if (stored.revokedAt) {
-    // Rejeu d'un token deja consomme : toute la famille est compromise.
-    await revokeFamily(stored.familyId);
-    res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
-    throw new UnauthorizedError("Session révoquée pour sécurité, veuillez vous reconnecter");
-  }
-
   if (stored.expiresAt.getTime() <= Date.now()) {
     await revokeFamily(stored.familyId);
     res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
@@ -138,24 +136,39 @@ export async function refresh(req: Request, res: Response) {
     where: { id: payload.sub },
     include: { student: { include: { formation: true, level: true } } },
   });
-  if (!user || !user.isActive) {
+  // Un jeton emis avant une desactivation ou un changement de mot de passe
+  // porte une ancienne version de session : meme controle que requireAuth.
+  if (!user || !user.isActive || (payload.sv ?? 0) !== user.sessionVersion) {
     await revokeFamily(stored.familyId);
     res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
     throw new UnauthorizedError("Session expirée, veuillez vous reconnecter");
   }
 
-  // Rotation : on revoque l'ancien avant d'emettre le nouveau, dans la meme
-  // famille pour que la detection de rejeu reste groupee.
-  await revokeFamily(stored.familyId);
-  const { accessToken, refreshToken } = await issueTokensInFamily(
-    user.id,
-    user.role,
-    user.sessionVersion,
-    stored.familyId
-  );
+  // Rotation atomique : null si le jeton a deja ete consomme, que ce soit
+  // constate a la lecture ci-dessus ou perdu a l'instant face a une requete
+  // concurrente.
+  let tokens = stored.revokedAt
+    ? null
+    : await rotateRefreshToken(stored.id, stored.familyId, user.id, user.role, user.sessionVersion);
 
-  res.cookie(REFRESH_COOKIE_NAME, refreshToken, REFRESH_COOKIE_OPTIONS);
-  res.json({ user: toAuthUserDto(user), accessToken });
+  if (!tokens) {
+    if (!(await isConcurrentRefresh(stored.id, stored.familyId))) {
+      // Rejeu d'un token deja consomme : toute la famille est compromise.
+      await revokeFamily(stored.familyId);
+      res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
+      throw new UnauthorizedError("Session révoquée pour sécurité, veuillez vous reconnecter");
+    }
+    // Deux onglets ont presente le meme jeton au meme moment : celui-ci a
+    // perdu la course. On lui emet son propre jeton dans la famille, sans rien
+    // revoquer — revoquer ici invaliderait le jeton que l'autre onglet vient
+    // de recevoir. Le cookie etant partage, un seul des deux jetons survit
+    // dans le navigateur ; l'autre tombera avec la famille (deconnexion) ou a
+    // son expiration.
+    tokens = await issueTokensInFamily(user.id, user.role, user.sessionVersion, stored.familyId);
+  }
+
+  res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
+  res.json({ user: toAuthUserDto(user), accessToken: tokens.accessToken });
 }
 
 export async function me(req: Request, res: Response) {
