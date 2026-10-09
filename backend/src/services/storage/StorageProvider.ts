@@ -1,7 +1,22 @@
+import type { Readable } from "stream";
+
 export interface UploadResult {
   key: string;
   size: number;
   contentType: string;
+}
+
+/**
+ * Flux renvoye par StorageProvider.getObjectStream.
+ *
+ * `stream` est un flux node entierement lisible, meme si la taille n'est pas
+ * connue : les headers peuvent donc etre positionnes avant d'envoyer l'octet
+ * le premier.
+ */
+export interface FileObject {
+  stream: Readable;
+  contentType?: string;
+  contentLength?: number;
 }
 
 /**
@@ -11,10 +26,18 @@ export interface UploadResult {
  * Toute la logique metier doit dependre uniquement de cette interface,
  * jamais d'un SDK de stockage concret.
  *
- * Le bucket est prive par defaut (voir docker-compose.yml) : seule
- * getSignedUrl() doit servir a donner un acces temporaire a un fichier,
- * apres que le controller appelant a verifie le role/statut de la
- * ressource. Ne jamais exposer directement une cle ou une URL publique.
+ * Le bucket est prive par defaut (voir docker-compose.yml) : le serveur est le
+ * seul a pouvoir le lire. Le flux est transmis par le backend lui-meme, apres
+ * que le controller appelant a verifie le role et le statut de la ressource.
+ *
+ * Il n'y a volontairement PAS de methode "give a URL to the browser". Une URL
+ * signee emportee hors du serveur : elle n'est plus du tout verifiee (le
+ * navigateur la demande directement au stockage), elle ne suit donc ni la
+ * relecture du compte (desactivation), ni le changement de statut de la fiche,
+ * ni le cloisonnement par filiere — pendant toute sa duree de vie. Elle
+ * embarque en plus un nom d'hote, ce qui impose de publier le stockage sous
+ * une adresse accessible au navigateur (impossible quand MinIO vit dans un
+ * reseau Docker prive). Streamer via le backend resout les deux problemes.
  */
 export interface StorageProvider {
   upload(params: {
@@ -25,15 +48,5 @@ export interface StorageProvider {
 
   delete(key: string): Promise<void>;
 
-  /**
-   * URL signee temporaire pour un acces controle (lecture/telechargement).
-   * `downloadFileName`, si fourni, force le navigateur a telecharger le
-   * fichier (Content-Disposition: attachment) plutot que l'afficher en
-   * ligne — utilise pour le bouton "Telecharger" (vs "Consulter").
-   */
-  getSignedUrl(
-    key: string,
-    expiresInSeconds?: number,
-    downloadFileName?: string
-  ): Promise<string>;
+  getObjectStream(key: string): Promise<FileObject>;
 }

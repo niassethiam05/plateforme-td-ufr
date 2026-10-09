@@ -107,12 +107,28 @@ export function useDecideTdFile() {
   });
 }
 
-export async function requestTdFileDownloadUrl(id: string) {
-  const { data } = await api.get<{ url: string }>(`/td/${id}/download`);
-  return data.url;
+/**
+ * Obtient l'URL d'une ressource fichier (consultation ou telechargement).
+ *
+ * Le serveur renvoie une URL relative de meme origine + un jeton de portee
+ * restreinte, court (120 s) et lie a la session. Le jeton passe en query string
+ * car une requete subie par un `<iframe>` ou `window.open()` n'envoie pas
+ * l'en-tete Authorization. Il n'est pas un jeton d'acces : le serveur le
+ * re-verifie, ainsi que le compte et la visibilite de la fiche, a chaque
+ * requete de flux.
+ *
+ * Resultat relatif (`/api/...`) : aucun nom d'hote de stockage n'est expose,
+ * et la requete reste de meme origine (CSP `frame-src 'self'`).
+ */
+async function requestFileUrl(id: string, scope: "download" | "view"): Promise<string> {
+  const { data } = await api.get<{ url: string; token: string }>(`/td/${id}/${scope}`);
+  return `${data.url}?token=${encodeURIComponent(data.token)}`;
 }
 
-export async function requestTdFileViewUrl(id: string) {
-  const { data } = await api.get<{ url: string }>(`/td/${id}/view`);
-  return data.url;
+export function requestTdFileDownloadUrl(id: string) {
+  return requestFileUrl(id, "download");
+}
+
+export function requestTdFileViewUrl(id: string) {
+  return requestFileUrl(id, "view");
 }

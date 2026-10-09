@@ -1,13 +1,17 @@
 import { isAxiosError } from "axios";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Spinner } from "../components/Spinner";
 import { useChangePassword, useProfile, useUpdateProfile } from "../services/profile";
+import { useAuthStore } from "../store/useAuthStore";
 import { toastError, toastSuccess } from "../store/useToastStore";
 
 export function ProfilePage() {
   const { data: profile, isLoading } = useProfile();
   const updateProfile = useUpdateProfile();
   const changePassword = useChangePassword();
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const navigate = useNavigate();
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -46,10 +50,13 @@ export function ProfilePage() {
     }
     try {
       await changePassword.mutateAsync({ currentPassword, newPassword });
-      toastSuccess("Mot de passe modifié.");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
+      // Le backend invalide toutes les sessions (y compris celle-ci) apres un
+      // changement de mot de passe : c'est ce qui neutralise un refresh token
+      // vole. On deconnecte donc explicitement plutot que d'attendre le 401
+      // sur la requete suivante.
+      clearAuth();
+      toastSuccess("Mot de passe modifié. Reconnectez-vous avec votre nouveau mot de passe.");
+      navigate("/connexion", { replace: true });
     } catch (err) {
       if (isAxiosError(err) && err.response?.status === 401) {
         toastError("Mot de passe actuel incorrect.");

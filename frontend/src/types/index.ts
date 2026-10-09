@@ -149,6 +149,10 @@ export interface AdminUserRow {
   lastName: string;
   role: Role;
   isActive: boolean;
+  // Renseigne par l'administration quand elle valide un compte enseignant.
+  // isActive=false + teacherApprovedAt=null = demande en attente de validation.
+  // isActive=false + teacherApprovedAt*renseigne = compte valide puis desactive.
+  teacherApprovedAt?: string | null;
   createdAt: string;
   student?: { formation: Formation; level: Level } | null;
   teacher?: { department?: string | null } | null;

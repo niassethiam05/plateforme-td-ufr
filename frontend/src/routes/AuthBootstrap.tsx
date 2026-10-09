@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { api } from "../services/api";
-import { useAuthStore } from "../store/useAuthStore";
-import type { AuthUser } from "../types";
+import { refreshSession } from "../services/api";
 import { Spinner } from "../components/Spinner";
 
 /**
@@ -12,17 +10,14 @@ import { Spinner } from "../components/Spinner";
  * que la verification est en cours.
  */
 export function AuthBootstrap({ children }: { children: ReactNode }) {
-  const setAuth = useAuthStore((s) => s.setAuth);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    api
-      .post<{ user: AuthUser; accessToken: string }>("/auth/refresh")
-      .then(({ data }) => {
-        if (!cancelled) setAuth(data.user, data.accessToken);
-      })
+    // refreshSession met lui-meme le store a jour et mutualise les appels
+    // concurrents (voir services/api.ts).
+    refreshSession()
       .catch(() => {
         // Pas de session active : c'est un cas normal (visiteur non connecte).
       })
@@ -33,7 +28,6 @@ export function AuthBootstrap({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!checked) {

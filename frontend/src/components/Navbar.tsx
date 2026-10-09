@@ -1,4 +1,6 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, NavLink } from "react-router-dom";
+import { logoutSession } from "../services/api";
 import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
 import { useAuthStore } from "../store/useAuthStore";
@@ -10,7 +12,16 @@ const publicLinks = [
 ];
 
 export function Navbar() {
-  const { isAuthenticated, user, clearAuth } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
+  const queryClient = useQueryClient();
+
+  async function handleLogout() {
+    await logoutSession();
+    // Les donnees en cache (favoris, notifications, fiches) appartiennent a
+    // l'utilisateur qui vient de partir : elles ne doivent pas s'afficher pour
+    // le suivant sur le meme poste.
+    queryClient.clear();
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-950/80">
@@ -51,7 +62,7 @@ export function Navbar() {
               </Link>
               <button
                 type="button"
-                onClick={clearAuth}
+                onClick={handleLogout}
                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Déconnexion

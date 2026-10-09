@@ -26,7 +26,7 @@ const prismaMock = vi.hoisted(() => ({
 const storageMock = vi.hoisted(() => ({
   upload: vi.fn(),
   delete: vi.fn(),
-  getSignedUrl: vi.fn(),
+  getObjectStream: vi.fn(),
 }));
 
 vi.mock("../../config/prisma", () => ({ prisma: prismaMock }));
@@ -37,7 +37,7 @@ vi.mock("../notification.service", () => ({
 }));
 
 // Import APRES les vi.mock() : td.service.ts doit recevoir les modules mockes.
-import { getTdFileOrThrow, listTdFiles, registerDownload } from "../td.service";
+import { finalizeDownload, finalizeView, getTdFileOrThrow, listTdFiles, prepareDownload } from "../td.service";
 
 /** Fiche PUBLISHED type, matiere en L1 de la formation "formation-A". */
 function baseTdFile(overrides: Record<string, unknown> = {}) {
@@ -150,35 +150,75 @@ describe("td.service — getTdFileOrThrow (cloison stricte + acces proprietaire)
   });
 });
 
-describe("td.service — registerDownload", () => {
-  it("bloque le telechargement d'une fiche non publiee", async () => {
+describe("td.service — telechargement : droits verifies deux fois (emission puis flux)", () => {
+  it("prepareDownload refuse une fiche non publiee", async () => {
     prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.DRAFT }));
 
-    await expect(registerDownload("td-1", { id: "student-1", role: Role.STUDENT })).rejects.toThrow(
+    await expect(prepareDownload("td-1", { id: "student-1", role: Role.STUDENT })).rejects.toThrow(
       NotFoundError
     );
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
-  it("bloque le telechargement pour un etudiant d'une autre filiere sans rien enregistrer", async () => {
+  it("prepareDownload refuse un etudiant d'une autre filiere sans rien enregistrer", async () => {
     prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
     prismaMock.student.findUnique.mockResolvedValue({ formationId: "formation-B" });
 
-    await expect(registerDownload("td-1", { id: "student-1", role: Role.STUDENT })).rejects.toThrow(
+    await expect(prepareDownload("td-1", { id: "student-1", role: Role.STUDENT })).rejects.toThrow(
       ForbiddenError
     );
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
-  it("autorise et enregistre le telechargement pour un etudiant de la bonne filiere", async () => {
+  it("prepareDownload autorise mais ne compte pas : le simple clic n'est pas un telechargement", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
+    prismaMock.student.findUnique.mockResolvedValue({ formationId: "formation-A" });
+
+    const target = await prepareDownload("td-1", { id: "student-1", role: Role.STUDENT });
+
+    expect(target).toEqual({ fileKey: "key.pdf", downloadFileName: "td-test.pdf" });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.download.create).not.toHaveBeenCalled();
+  });
+
+  it("finalizeDownload verifie les droits au moment du flux, puis compte", async () => {
     prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
     prismaMock.student.findUnique.mockResolvedValue({ formationId: "formation-A" });
     prismaMock.$transaction.mockResolvedValue([{}, {}]);
-    storageMock.getSignedUrl.mockResolvedValue("https://signed-url.example/file.pdf");
 
-    const url = await registerDownload("td-1", { id: "student-1", role: Role.STUDENT });
+    const target = await finalizeDownload("td-1", { id: "student-1", role: Role.STUDENT });
 
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
-    expect(url).toBe("https://signed-url.example/file.pdf");
+    expect(target.fileKey).toBe("key.pdf");
+  });
+
+  it("finalizeDownload refuse si la fiche a ete retiree entre l'emission du lien et le flux", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.DRAFT }));
+
+    await expect(finalizeDownload("td-1", { id: "student-1", role: Role.STUDENT })).rejects.toThrow(
+      NotFoundError
+    );
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("finalizeView refuse si le compte n'a plus acces a la fiche, sans compter", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
+    prismaMock.student.findUnique.mockResolvedValue({ formationId: "formation-B" });
+
+    await expect(finalizeView("td-1", { id: "student-1", role: Role.STUDENT })).rejects.toThrow(
+      ForbiddenError
+    );
+    expect(prismaMock.tdFile.update).not.toHaveBeenCalled();
+  });
+
+  it("finalizeView compte la vue pour un etudiant autorise", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
+    prismaMock.student.findUnique.mockResolvedValue({ formationId: "formation-A" });
+    prismaMock.favorite.findMany.mockResolvedValue([]);
+
+    await finalizeView("td-1", { id: "student-1", role: Role.STUDENT });
+
+    expect(prismaMock.tdFile.update).toHaveBeenCalledTimes(1);
+    expect(prismaMock.tdFile.update.mock.calls[0][0].data.viewCount).toEqual({ increment: 1 });
   });
 });

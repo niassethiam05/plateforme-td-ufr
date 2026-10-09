@@ -1,7 +1,9 @@
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
 import { prisma } from "../config/prisma";
+import { invalidateAuthUserState } from "../config/authStateCache";
 import { NotFoundError, UnauthorizedError } from "../utils/AppError";
+import { revokeAllForUser } from "./token.service";
 import { ChangePasswordInput, UpdateProfileInput } from "../validators/profile.validators";
 
 const SALT_ROUNDS = 12;
@@ -73,5 +75,17 @@ export async function changePassword(userId: string, input: ChangePasswordInput)
   }
 
   const passwordHash = await bcrypt.hash(input.newPassword, SALT_ROUNDS);
-  await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+
+  // Increment sessionVersion + revocation des refresh tokens : changer son mot
+  // de passe doit déconnecter les sessions ouvertes ailleurs (autre poste,
+  // autre navigateur). Sans cela, un refresh token vole reste utilisable
+  // pendant 7 jours meme apres le changement, et l'utilisateur a "corrige"
+  // son mot de passe sans que la fuite soit neutralisee.
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash, sessionVersion: { increment: 1 } },
+  });
+
+  await revokeAllForUser(userId);
+  invalidateAuthUserState(userId);
 }

@@ -8,7 +8,6 @@ export function notFoundHandler(req: Request, res: Response) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function errorHandler(
   err: unknown,
   _req: Request,

@@ -4,9 +4,9 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import type { Readable } from "stream";
 import { env } from "../../config/env";
-import { StorageProvider, UploadResult } from "./StorageProvider";
+import { FileObject, StorageProvider, UploadResult } from "./StorageProvider";
 
 /**
  * Implementation S3-compatible du StorageProvider.
@@ -58,19 +58,27 @@ export class S3StorageProvider implements StorageProvider {
     );
   }
 
-  async getSignedUrl(
-    key: string,
-    expiresInSeconds = 300,
-    downloadFileName?: string
-  ): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      ...(downloadFileName
-        ? { ResponseContentDisposition: `attachment; filename="${downloadFileName}"` }
-        : {}),
-    });
-    return getSignedUrl(this.client, command, { expiresIn: expiresInSeconds });
+  /**
+   * Lit le fichier depuis MinIO/S3 et renvoie le flux, sans le mettre en
+   * memoire : GetObjectCommand rend deja un flux node, que l'on branche tel
+   * quel sur la reponse Express (`stream.pipe(res)`). Un PDF de 20 Mo ne
+   * consomme donc pas 20 Mo sur le heap du serveur.
+   *
+   * Si la cle n'existe pas, S3 repond NoSuchKey : c'est le cas d'une fiche
+   * dont le fichier a ete supprime du bucket, mais dont l'enregistrement en
+   * base existe toujours. Le controller traduit l'erreur en 404 (voir
+   * error handler).
+   */
+  async getObjectStream(key: string): Promise<FileObject> {
+    const result = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key })
+    );
+
+    return {
+      stream: result.Body as Readable,
+      contentType: result.ContentType,
+      contentLength: result.ContentLength,
+    };
   }
 }
 

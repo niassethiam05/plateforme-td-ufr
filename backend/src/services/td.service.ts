@@ -376,25 +376,85 @@ export async function decideTdFile(id: string, approve: boolean, adminComment?: 
   return updated;
 }
 
-export async function registerDownload(id: string, requester: RequestUser) {
+/**
+ * Fichier cible apres verification des droits : la cle de stockage, et le nom
+ * propose au navigateur pour un telechargement.
+ */
+export interface FileTarget {
+  fileKey: string;
+  downloadFileName: string;
+}
+
+function toFileTarget(tdFile: { fileKey: string; title: string }): FileTarget {
+  return {
+    fileKey: tdFile.fileKey,
+    downloadFileName: `${slugifyKeyPart(tdFile.title) || "fiche-td"}.pdf`,
+  };
+}
+
+/**
+ * Regle d'acces pour un telechargement : fiche PUBLISHED, visible par la
+ * filiere du requerant. Aucun effet de bord.
+ */
+async function resolveDownloadTarget(id: string, requester: RequestUser): Promise<FileTarget> {
   const tdFile = await prisma.tdFile.findUnique({ where: { id }, include: publicListInclude });
   if (!tdFile || tdFile.status !== TdFileStatus.PUBLISHED) {
     throw new NotFoundError("Fiche introuvable");
   }
-
   await assertVisibleToStudent(tdFile, requester);
+  return toFileTarget(tdFile);
+}
+
+/**
+ * Regle d'acces pour un apercu : la meme regle que la vue detaillee de la
+ * fiche (un enseignant peut apercer son propre brouillon). Aucun effet de bord.
+ */
+async function resolveViewTarget(id: string, requester?: RequestUser): Promise<FileTarget> {
+  const tdFile = await getTdFileOrThrow(id, requester);
+  return toFileTarget(tdFile);
+}
+
+/**
+ * Etape 1 : emettre une URL de telechargement (cf. controller). Verifie
+ * l'acces mais n'enregistre RIEN - un simple clic sur la page de detail ne
+ * compte pas comme telechargement.
+ *
+ * Le comptage a lieu dans finalizeDownload, cote flux.
+ */
+export async function prepareDownload(id: string, requester: RequestUser): Promise<FileTarget> {
+  return resolveDownloadTarget(id, requester);
+}
+
+/**
+ * Etape 1, pour l'apercu. Voir prepareDownload.
+ */
+export async function prepareView(id: string, requester?: RequestUser): Promise<FileTarget> {
+  return resolveViewTarget(id, requester);
+}
+
+/**
+ * Etape 2 : cote flux, avant d'envoyer le premier octet. Les droits sont
+ * verifies une nouvelle fois - c'est ici que la desactivation d'un compte ou
+ * le retrait de la fiche ont un effet, quelle que soit la date d'emission de
+ * l'URL signee. Le comptage se fait ici pour ne compter que ce qui est
+ * reellement servi.
+ */
+export async function finalizeDownload(id: string, requester: RequestUser): Promise<FileTarget> {
+  const target = await resolveDownloadTarget(id, requester);
 
   await prisma.$transaction([
     prisma.download.create({ data: { userId: requester.id, tdFileId: id } }),
     prisma.tdFile.update({ where: { id }, data: { downloadCount: { increment: 1 } } }),
   ]);
 
-  const fileName = `${slugifyKeyPart(tdFile.title) || "fiche-td"}.pdf`;
-  return storageProvider.getSignedUrl(tdFile.fileKey, 120, fileName);
+  return target;
 }
 
-export async function registerView(id: string, requester?: RequestUser) {
-  const tdFile = await getTdFileOrThrow(id, requester);
+/**
+ * Cote flux, pour l'apercu. Voir finalizeDownload.
+ */
+export async function finalizeView(id: string, requester?: RequestUser): Promise<FileTarget> {
+  const target = await resolveViewTarget(id, requester);
   await prisma.tdFile.update({ where: { id }, data: { viewCount: { increment: 1 } } });
-  return storageProvider.getSignedUrl(tdFile.fileKey, 300);
+  return target;
 }

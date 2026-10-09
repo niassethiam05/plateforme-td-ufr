@@ -48,6 +48,20 @@ model User {
   role         Role
   avatarUrl    String?  @map("avatar_url")
   isActive     Boolean  @default(true) @map("is_active")
+  // Incrémente à chaque événement qui doit invalider les sessions en cours
+  // (désactivation du compte, changement de mot de passe). La valeur est
+  // embarquée dans les JWT ; si elle ne correspond plus, les tokens sont
+  // rejetés. Sans ce mécanisme, un access token reste valide jusqu'à son
+  // expiration (15 min) après une désactivation, et un refresh token volé
+  // reste utilisable 7 jours même après un changement de mot de passe.
+  sessionVersion Int      @default(0) @map("session_version")
+  // Horodatage de la validation par l'administration d'un compte enseignant.
+  // NULL tant que le compte n'a pas ete valide. Distingue les deux etats
+  // inactifs possibles : "jamais valide" (isActive=false + approvedAt=NULL)
+  // et "valide puis desactive" (isActive=false + approvedAt renseigné).
+  // Sans cette distinction, le bouton "Reactiver" de la liste admin
+  // regrouperait les deux cas, sans que l'admin sache lequel il traite.
+  teacherApprovedAt DateTime? @map("teacher_approved_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -57,8 +71,30 @@ model User {
   downloads     Download[]
   notifications Notification[]
   reports       Report[]
+  refreshTokens RefreshToken[]
 
   @@map("users")
+}
+
+// Un jeton refresh n'est jamais stocké en clair : seule son empreinte SHA-256
+// l'est. La rotation se fait par famille : à chaque refresh, le jeton présenté
+// est révoqué et un nouveau est créé dans la même famille. Si un jeton déjà
+// révoqué est présenté à nouveau, c'est la signature d'un vol : toute la
+// famille est révoquée d'un coup (voir auth.controller.refresh).
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  familyId  String    @map("family_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
 }
 
 model Student {
