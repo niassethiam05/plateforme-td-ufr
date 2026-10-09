@@ -119,6 +119,44 @@ export const registerLimiter = rateLimit({
 });
 
 /**
+ * Limite les demandes de lien "mot de passe oublie" pour une adresse donnee
+ * depuis une IP donnee (meme cle IP + email que loginLimiter, pour la meme
+ * raison : ne pas bloquer tout un campus derriere un NAT). Chaque demande
+ * aboutie envoie un email ; cinq par heure suffisent a quelqu'un qui n'a
+ * pas recu le premier.
+ *
+ * Le service applique en plus un delai minimal entre deux emails pour un meme
+ * compte, quelle que soit l'IP (voir passwordReset.service).
+ */
+export const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => `${req.ip ?? "anonymous"}|${loginEmail(req)}`,
+  message: {
+    error: "TooManyRequests",
+    message: "Trop de demandes de réinitialisation pour cette adresse, veuillez réessayer plus tard.",
+  },
+});
+
+/**
+ * Plafond par IP sur les deux routes de reinitialisation. Cote demande, il
+ * empeche d'envoyer des emails a des centaines d'adresses differentes ; cote
+ * validation, il borne les essais de jetons (chacun coute une requete en base).
+ */
+export const passwordResetIpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "TooManyRequests",
+    message: "Trop de demandes de réinitialisation, veuillez réessayer plus tard.",
+  },
+});
+
+/**
  * Limite /auth/refresh et /auth/logout.
  *
  * /refresh est appele au chargement de chaque page (voir AuthBootstrap) et a

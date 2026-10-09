@@ -7,6 +7,8 @@ import { HomePage } from "../pages/public/HomePage";
 import { CataloguePage } from "../pages/public/CataloguePage";
 import { LoginPage } from "../pages/public/LoginPage";
 import { RegisterPage } from "../pages/public/RegisterPage";
+import { ForgotPasswordPage } from "../pages/public/ForgotPasswordPage";
+import { ResetPasswordPage } from "../pages/public/ResetPasswordPage";
 import { AboutPage } from "../pages/public/AboutPage";
 import { TdViewerPage } from "../pages/public/TdViewerPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
@@ -71,6 +73,8 @@ export function AppRouter() {
         <Route path="/fiches/:id" element={<TdViewerPage />} />
         <Route path="/connexion" element={<LoginPage />} />
         <Route path="/inscription" element={<RegisterPage />} />
+        <Route path="/mot-de-passe-oublie" element={<ForgotPasswordPage />} />
+        <Route path="/reinitialiser-mot-de-passe" element={<ResetPasswordPage />} />
         <Route path="/a-propos" element={<AboutPage />} />
       </Route>
 

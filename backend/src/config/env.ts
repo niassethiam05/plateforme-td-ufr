@@ -37,6 +37,16 @@ export const env = {
   upload: {
     maxFileSizeMb: Number(process.env.MAX_FILE_SIZE_MB ?? 20),
   },
+
+  // Envoi d'emails (mot de passe oublie). Tout est optionnel : sans SMTP_HOST,
+  // aucun email n'est envoye (voir services/mail.service).
+  mail: {
+    host: process.env.SMTP_HOST || undefined,
+    port: Number(process.env.SMTP_PORT ?? 587),
+    user: process.env.SMTP_USER || undefined,
+    password: process.env.SMTP_PASSWORD || undefined,
+    from: process.env.MAIL_FROM ?? "Fiches de TD <no-reply@localhost>",
+  },
 } as const;
 
 /**

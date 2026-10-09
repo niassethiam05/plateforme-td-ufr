@@ -55,5 +55,17 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Le mot de passe est requis"),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().email("Email invalide"),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, "Lien de réinitialisation manquant").max(200),
+  // Meme regle qu'a l'inscription et qu'au changement depuis le profil.
+  newPassword: z.string().min(8, "Le mot de passe doit contenir au moins 8 caracteres"),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

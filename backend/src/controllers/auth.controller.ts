@@ -4,6 +4,8 @@ import { loginUser, registerUser, toAuthUserDto } from "../services/auth.service
 import { prisma } from "../config/prisma";
 import { NotFoundError, UnauthorizedError } from "../utils/AppError";
 import { hashRefreshToken, verifyRefreshToken } from "../utils/jwt";
+import { requestPasswordReset, resetPassword } from "../services/passwordReset.service";
+import { ForgotPasswordInput, ResetPasswordInput } from "../validators/auth.validators";
 import {
   isConcurrentRefresh,
   issueTokensInFamily,
@@ -184,4 +186,25 @@ export async function me(req: Request, res: Response) {
     throw new NotFoundError("Utilisateur introuvable");
   }
   res.json(toAuthUserDto(user));
+}
+/**
+ * Mot de passe oublie : la reponse est identique que l'adresse corresponde ou
+ * non a un compte, pour ne pas reveler quelles adresses sont inscrites.
+ */
+export async function forgotPassword(req: Request, res: Response) {
+  const { email } = req.body as ForgotPasswordInput;
+  await requestPasswordReset(email);
+  res.json({
+    message:
+      "Si un compte actif existe avec cette adresse, un email contenant un lien de réinitialisation vient de lui être envoyé.",
+  });
+}
+
+export async function resetPasswordWithToken(req: Request, res: Response) {
+  const { token, newPassword } = req.body as ResetPasswordInput;
+  await resetPassword(token, newPassword);
+  // La session eventuellement ouverte dans ce navigateur vient d'etre
+  // revoquee avec les autres : on retire son cookie.
+  res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_CLEAR_OPTIONS);
+  res.status(204).send();
 }

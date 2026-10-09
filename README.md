@@ -66,6 +66,9 @@ premier lancement.
   - Un compte étudiant (avec choix formation/niveau) est actif immédiatement.
   - Un compte enseignant est créé inactif : un administrateur doit le valider
     depuis « Utilisateurs » avant la première connexion.
+- **Mot de passe oublié** : lien de réinitialisation envoyé par email, valable
+  30 minutes et utilisable une seule fois. Sans serveur SMTP configuré
+  (développement), le lien est affiché dans la console du backend.
 - **Sessions** : access token de 15 min renouvelé automatiquement, refresh
   token en cookie httpOnly avec rotation et détection de rejeu. Désactiver un
   compte ou changer un mot de passe ferme les sessions ouvertes.
@@ -116,6 +119,10 @@ Il n'y a pas encore de tests côté frontend.
 - Définir `NODE_ENV=production` et des valeurs aléatoires d'au moins 32
   caractères, différentes l'une de l'autre, pour `JWT_ACCESS_SECRET` et
   `JWT_REFRESH_SECRET` : le backend refuse de démarrer sinon.
+- Renseigner `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` et
+  `MAIL_FROM` (voir `backend/.env.example`) : sans eux, aucun email de
+  réinitialisation de mot de passe ne part. `CLIENT_URL` doit être l'adresse
+  publique du site, car elle sert à construire le lien envoyé.
 - Appliquer les migrations avec `npx prisma migrate deploy` (et non
   `prisma migrate dev`, réservé au développement).
 - Placer le backend derrière un reverse proxy : `trust proxy` est réglé sur

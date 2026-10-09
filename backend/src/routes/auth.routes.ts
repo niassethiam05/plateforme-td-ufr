@@ -1,11 +1,26 @@
 import { Router } from "express";
-import { login, logout, me, refresh, register } from "../controllers/auth.controller";
+import {
+  forgotPassword,
+  login,
+  logout,
+  me,
+  refresh,
+  register,
+  resetPasswordWithToken,
+} from "../controllers/auth.controller";
 import { validateBody } from "../middleware/validate";
-import { loginSchema, registerSchema } from "../validators/auth.validators";
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema,
+} from "../validators/auth.validators";
 import { requireAuth } from "../middleware/auth";
 import {
   loginIpLimiter,
   loginLimiter,
+  passwordResetIpLimiter,
+  passwordResetLimiter,
   registerLimiter,
   sessionLimiter,
 } from "../middleware/rateLimit";
@@ -20,6 +35,19 @@ router.post("/login", loginIpLimiter, loginLimiter, validateBody(loginSchema), a
 // La limite est posee AVANT le handler, donc avant toute ecriture.
 router.post("/refresh", sessionLimiter, asyncHandler(refresh));
 router.post("/logout", sessionLimiter, asyncHandler(logout));
+router.post(
+  "/forgot-password",
+  passwordResetIpLimiter,
+  passwordResetLimiter,
+  validateBody(forgotPasswordSchema),
+  asyncHandler(forgotPassword)
+);
+router.post(
+  "/reset-password",
+  passwordResetIpLimiter,
+  validateBody(resetPasswordSchema),
+  asyncHandler(resetPasswordWithToken)
+);
 router.get("/me", requireAuth, asyncHandler(me));
 
 export default router;

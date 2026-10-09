@@ -1,6 +1,7 @@
 import { createApp } from "./app";
 import { env } from "./config/env";
 import { purgeExpiredRefreshTokens } from "./services/token.service";
+import { purgeExpiredPasswordResetTokens } from "./services/passwordReset.service";
 
 const app = createApp();
 
@@ -17,9 +18,17 @@ purgeExpiredRefreshTokens()
   })
   .catch((err) => console.error("Echec du nettoyage des refresh tokens:", err));
 
+// Meme principe pour les liens "mot de passe oublie" expires ou utilises.
+purgeExpiredPasswordResetTokens().catch((err) =>
+  console.error("Echec du nettoyage des liens de reinitialisation:", err)
+);
+
 const purgeTimer = setInterval(() => {
   purgeExpiredRefreshTokens().catch((err) =>
     console.error("Echec du nettoyage des refresh tokens:", err)
+  );
+  purgeExpiredPasswordResetTokens().catch((err) =>
+    console.error("Echec du nettoyage des liens de reinitialisation:", err)
   );
 }, REFRESH_TOKEN_PURGE_INTERVAL_MS);
 // Ne maintient pas le processus en vie pour ce seul timer.
