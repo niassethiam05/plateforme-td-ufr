@@ -1,5 +1,6 @@
 import multer from "multer";
 import { env } from "../config/env";
+import { AppError } from "../utils/AppError";
 
 const ALLOWED_PDF_TYPES = new Set(["application/pdf"]);
 const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -17,10 +18,10 @@ export const uploadTdFile = multer({
   limits: { fileSize: env.upload.maxFileSizeMb * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.fieldname === "file" && !ALLOWED_PDF_TYPES.has(file.mimetype)) {
-      return cb(new Error("Le fichier de la fiche doit etre un PDF."));
+      return cb(new AppError("Le fichier de la fiche doit etre un PDF.", 422));
     }
     if (file.fieldname === "coverImage" && !ALLOWED_IMAGE_TYPES.has(file.mimetype)) {
-      return cb(new Error("L'image de couverture doit etre au format PNG, JPEG ou WEBP."));
+      return cb(new AppError("L'image de couverture doit etre au format PNG, JPEG ou WEBP.", 422));
     }
     cb(null, true);
   },

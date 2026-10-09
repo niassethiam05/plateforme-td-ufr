@@ -266,23 +266,92 @@ async function assertCanEdit(id: string, requester: RequestUser) {
   return tdFile;
 }
 
+/**
+ * Une fiche PUBLISHED modifiee par son enseignant repasse en attente de
+ * validation. La publication atteste que l'administration a relu CE contenu :
+ * sans ce retour en PENDING, il suffisait de faire valider une fiche anodine
+ * puis d'en changer le titre, la matiere ou le PDF pour publier n'importe quoi
+ * sans relecture.
+ *
+ * Consequence assumee : la fiche disparait du catalogue jusqu'a sa
+ * revalidation. Un administrateur qui modifie lui-meme une fiche ne declenche
+ * pas ce retour — c'est lui le validateur.
+ */
+function revalidationData(
+  tdFile: { status: TdFileStatus },
+  requester: RequestUser
+): { status: TdFileStatus; adminComment: null } | undefined {
+  if (requester.role === "ADMIN" || tdFile.status !== TdFileStatus.PUBLISHED) return undefined;
+  return { status: TdFileStatus.PENDING, adminComment: null };
+}
+
+/**
+ * Notifie tous les administrateurs qu'une fiche attend leur validation.
+ * Best-effort : un echec de notification ne doit jamais faire echouer
+ * l'operation qui l'a declenchee.
+ */
+async function notifyAdminsOfPendingTdFile(
+  tdFile: { title: string; teacher: { user: { firstName: string; lastName: string } } },
+  reason: "submitted" | "modified"
+) {
+  const teacherName = `${tdFile.teacher.user.firstName} ${tdFile.teacher.user.lastName}`;
+  const message =
+    reason === "submitted"
+      ? `"${tdFile.title}" a été soumise par ${teacherName} et attend votre validation.`
+      : `"${tdFile.title}" a été modifiée par ${teacherName} après publication et doit être revalidée.`;
+
+  try {
+    const admins = await prisma.user.findMany({ where: { role: Role.ADMIN }, select: { id: true } });
+    await Promise.all(
+      admins.map((admin) =>
+        createNotification({
+          userId: admin.id,
+          title: reason === "submitted" ? "Nouvelle fiche à valider" : "Fiche modifiée à revalider",
+          message,
+          link: "/admin/validation",
+        })
+      )
+    );
+  } catch {
+    // Best-effort, voir ci-dessus.
+  }
+}
+
 export async function updateTdFile(id: string, requester: RequestUser, input: UpdateTdFileInput) {
-  await assertCanEdit(id, requester);
-  return prisma.tdFile.update({ where: { id }, data: input, include: publicListInclude });
+  const tdFile = await assertCanEdit(id, requester);
+  const revalidation = revalidationData(tdFile, requester);
+
+  const updated = await prisma.tdFile.update({
+    where: { id },
+    data: { ...input, ...revalidation },
+    include: publicListInclude,
+  });
+
+  if (revalidation) await notifyAdminsOfPendingTdFile(updated, "modified");
+  return updated;
 }
 
 export async function replaceTdFilePdf(id: string, requester: RequestUser, file: UploadedFiles["file"]) {
   const tdFile = await assertCanEdit(id, requester);
+  const revalidation = revalidationData(tdFile, requester);
   const key = `td-files/${tdFile.subjectId}/${Date.now()}-${slugifyKeyPart(tdFile.title)}.pdf`;
   const upload = await storageProvider.upload({ buffer: file.buffer, key, contentType: file.mimetype });
 
   await storageProvider.delete(tdFile.fileKey).catch(() => undefined);
 
-  return prisma.tdFile.update({
+  const updated = await prisma.tdFile.update({
     where: { id },
-    data: { fileKey: upload.key, fileSize: upload.size, fileType: upload.contentType },
+    data: {
+      fileKey: upload.key,
+      fileSize: upload.size,
+      fileType: upload.contentType,
+      ...revalidation,
+    },
     include: publicListInclude,
   });
+
+  if (revalidation) await notifyAdminsOfPendingTdFile(updated, "modified");
+  return updated;
 }
 
 export async function deleteTdFile(id: string, requester: RequestUser) {
@@ -306,21 +375,7 @@ export async function submitTdFile(id: string, requester: RequestUser) {
     include: publicListInclude,
   });
 
-  // Notifie tous les administrateurs qu'une fiche attend leur validation.
-  // Best-effort : un echec de notification ne doit jamais faire echouer
-  // la soumission elle-meme.
-  const admins = await prisma.user.findMany({ where: { role: Role.ADMIN }, select: { id: true } });
-  const teacherName = `${updated.teacher.user.firstName} ${updated.teacher.user.lastName}`;
-  await Promise.all(
-    admins.map((admin) =>
-      createNotification({
-        userId: admin.id,
-        title: "Nouvelle fiche à valider",
-        message: `"${updated.title}" a été soumise par ${teacherName} et attend votre validation.`,
-        link: "/admin/validation",
-      })
-    )
-  ).catch(() => undefined);
+  await notifyAdminsOfPendingTdFile(updated, "submitted");
 
   return updated;
 }

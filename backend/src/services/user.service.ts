@@ -27,15 +27,17 @@ const SAFE_USER_SELECT = {
  * Liste les comptes pour l'ecran d'administration.
  *
  * `filter` accepte les trois roles, plus "PENDING" qui n'est pas un role mais
- * un filtre metier : comptes inactifs dont teacherApprovedAt est null, donc
- * les enseignants en attente de validation. Le filtre est applique en base
+ * un filtre metier : comptes ENSEIGNANTS inactifs dont teacherApprovedAt est
+ * null, donc en attente de validation. Le role fait partie du filtre :
+ * teacherApprovedAt est null pour tout etudiant, donc sans lui un etudiant
+ * desactive apparaissait dans la liste "A valider". Le filtre est applique en base
  * (et non cote client) pour que le compteur "A valider (n)" et la liste
  * affichee restent coherents sans avoir a charger tous les utilisateurs.
  */
 export function listUsers(filter?: Role | "PENDING") {
   const where: Prisma.UserWhereInput | undefined =
     filter === "PENDING"
-      ? { isActive: false, teacherApprovedAt: null }
+      ? { role: Role.TEACHER, isActive: false, teacherApprovedAt: null }
       : filter
         ? { role: filter }
         : undefined;

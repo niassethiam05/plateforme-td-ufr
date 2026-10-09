@@ -37,7 +37,16 @@ vi.mock("../notification.service", () => ({
 }));
 
 // Import APRES les vi.mock() : td.service.ts doit recevoir les modules mockes.
-import { finalizeDownload, finalizeView, getTdFileOrThrow, listTdFiles, prepareDownload } from "../td.service";
+import {
+  finalizeDownload,
+  finalizeView,
+  getTdFileOrThrow,
+  listTdFiles,
+  prepareDownload,
+  replaceTdFilePdf,
+  updateTdFile,
+} from "../td.service";
+import { createNotification } from "../notification.service";
 
 /** Fiche PUBLISHED type, matiere en L1 de la formation "formation-A". */
 function baseTdFile(overrides: Record<string, unknown> = {}) {
@@ -147,6 +156,71 @@ describe("td.service — getTdFileOrThrow (cloison stricte + acces proprietaire)
 
     const result = await getTdFileOrThrow("td-1", { id: "student-1", role: Role.STUDENT });
     expect(result.id).toBe("td-1");
+  });
+});
+
+describe("td.service — modification d'une fiche publiee (retour en validation)", () => {
+  const teacher = { id: "teacher-user-1", role: Role.TEACHER };
+  const admin = { id: "admin-1", role: Role.ADMIN };
+
+  beforeEach(() => {
+    prismaMock.teacher.findUnique.mockResolvedValue({ id: "teacher-1" });
+    prismaMock.tdFile.update.mockImplementation(async ({ data }) => baseTdFile(data));
+    prismaMock.user.findMany.mockResolvedValue([{ id: "admin-1" }]);
+    storageMock.upload.mockResolvedValue({ key: "new.pdf", size: 10, contentType: "application/pdf" });
+    storageMock.delete.mockResolvedValue(undefined);
+  });
+
+  it("un enseignant qui modifie sa fiche publiee la renvoie en attente et previent les admins", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
+
+    const updated = await updateTdFile("td-1", teacher, { title: "Nouveau titre" });
+
+    expect(prismaMock.tdFile.update.mock.calls[0][0].data).toEqual({
+      title: "Nouveau titre",
+      status: TdFileStatus.PENDING,
+      adminComment: null,
+    });
+    expect(updated.status).toBe(TdFileStatus.PENDING);
+    expect(createNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("un enseignant qui remplace le PDF de sa fiche publiee la renvoie en attente", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
+
+    await replaceTdFilePdf("td-1", teacher, { buffer: Buffer.from("%PDF-"), mimetype: "application/pdf", size: 5 });
+
+    expect(prismaMock.tdFile.update.mock.calls[0][0].data).toMatchObject({
+      fileKey: "new.pdf",
+      status: TdFileStatus.PENDING,
+    });
+    expect(createNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("la modification d'un brouillon ne change pas son statut", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.DRAFT }));
+
+    await updateTdFile("td-1", teacher, { title: "Nouveau titre" });
+
+    expect(prismaMock.tdFile.update.mock.calls[0][0].data).toEqual({ title: "Nouveau titre" });
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  it("un admin qui modifie une fiche publiee la laisse publiee", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
+
+    await updateTdFile("td-1", admin, { title: "Nouveau titre" });
+
+    expect(prismaMock.tdFile.update.mock.calls[0][0].data).toEqual({ title: "Nouveau titre" });
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  it("un enseignant ne peut pas modifier la fiche d'un autre", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
+    prismaMock.teacher.findUnique.mockResolvedValue({ id: "teacher-2" });
+
+    await expect(updateTdFile("td-1", teacher, { title: "x" })).rejects.toThrow(ForbiddenError);
+    expect(prismaMock.tdFile.update).not.toHaveBeenCalled();
   });
 });
 

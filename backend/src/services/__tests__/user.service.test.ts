@@ -26,9 +26,13 @@ describe("listUsers", () => {
     await listUsers("PENDING");
 
     // Le filtre doit atteindre Prisma : un filtrage cote client chargerait
-    // toute la base a chaque affichage de la liste admin.
+    // toute la base a chaque affichage de la liste admin. Le role en fait
+    // partie : sans lui, un etudiant desactive (teacherApprovedAt toujours
+    // null) serait liste comme enseignant a valider.
     expect(prismaMock.user.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { isActive: false, teacherApprovedAt: null } })
+      expect.objectContaining({
+        where: { role: Role.TEACHER, isActive: false, teacherApprovedAt: null },
+      })
     );
   });
 

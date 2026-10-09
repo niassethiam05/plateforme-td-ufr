@@ -91,6 +91,9 @@ async function main() {
       firstName: "Fatou",
       lastName: "Diallo",
       role: "TEACHER",
+      // Compte de demonstration deja valide : sans cette date, il passerait
+      // pour "jamais valide" s'il etait desactive depuis l'ecran admin.
+      teacherApprovedAt: new Date(),
       teacher: { create: { department: "Informatique de gestion" } },
     },
     include: { teacher: true },
