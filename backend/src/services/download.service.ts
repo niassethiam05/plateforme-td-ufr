@@ -1,5 +1,5 @@
 import { prisma } from "../config/prisma";
-import { publicListInclude } from "./td.service";
+import { publicListInclude, toPublicTdFile } from "./td.service";
 import { DownloadHistoryQuery } from "../validators/download.validators";
 
 /**
@@ -25,7 +25,7 @@ export async function listDownloadHistory(userId: string, query: DownloadHistory
     items: items.map((download) => ({
       id: download.id,
       downloadedAt: download.downloadedAt,
-      tdFile: download.tdFile,
+      tdFile: toPublicTdFile(download.tdFile),
     })),
     total,
     page: query.page,

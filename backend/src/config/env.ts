@@ -38,3 +38,32 @@ export const env = {
     maxFileSizeMb: Number(process.env.MAX_FILE_SIZE_MB ?? 20),
   },
 } as const;
+
+/**
+ * En production, refuse de demarrer avec des secrets JWT faibles. Les valeurs
+ * de .env.example ("change_me_...") sont publiques : les laisser en place
+ * permet a n'importe qui de fabriquer un jeton d'administrateur valide.
+ *
+ * Les deux secrets doivent aussi differer : c'est la cle de signature qui
+ * distingue un access token d'un refresh token.
+ *
+ * Applique uniquement en production pour ne pas bloquer un poste de
+ * developpement qui utilise les valeurs d'exemple.
+ */
+const MIN_JWT_SECRET_LENGTH = 32;
+
+if (env.nodeEnv === "production") {
+  for (const [name, secret] of [
+    ["JWT_ACCESS_SECRET", env.jwt.accessSecret],
+    ["JWT_REFRESH_SECRET", env.jwt.refreshSecret],
+  ] as const) {
+    if (secret.length < MIN_JWT_SECRET_LENGTH || secret.startsWith("change_me")) {
+      throw new Error(
+        `${name} est trop faible pour la production : utilisez une valeur aleatoire d'au moins ${MIN_JWT_SECRET_LENGTH} caracteres.`
+      );
+    }
+  }
+  if (env.jwt.accessSecret === env.jwt.refreshSecret) {
+    throw new Error("JWT_ACCESS_SECRET et JWT_REFRESH_SECRET doivent etre differents.");
+  }
+}

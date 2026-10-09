@@ -35,7 +35,13 @@ export const tdFileQuerySchema = z.object({
   // "mine=true" : un enseignant authentifie recupere SES propres fiches
   // (tous statuts confondus), sans avoir a connaitre son Teacher.id cote
   // frontend (distinct du User.id contenu dans le JWT).
-  mine: z.coerce.boolean().optional(),
+  //
+  // Pas de z.coerce.boolean() : il applique Boolean() a la chaine recue, donc
+  // "mine=false" valait true (toute chaine non vide est vraie).
+  mine: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(50).default(12),
 });

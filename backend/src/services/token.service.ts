@@ -9,7 +9,7 @@ export interface TokenPair {
   refreshToken: string;
 }
 
-/** Duree de vie du refresh token : 7 jours (aligne sur JWT_REFRESH_EXPIRES_IN). */
+/** Duree de vie par defaut du refresh token si JWT_REFRESH_EXPIRES_IN est illisible. */
 const REFRESH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function parseDurationToMs(value: string): number {
@@ -21,7 +21,11 @@ function parseDurationToMs(value: string): number {
   return amount * factor;
 }
 
-/** Duree de vie du cookie refresh : alignee sur la duree du token. */
+/**
+ * Duree de vie du refresh token, tiree de JWT_REFRESH_EXPIRES_IN. Sert a la
+ * fois au cookie et a la date d'expiration enregistree en base, pour que les
+ * trois (JWT, cookie, ligne en base) expirent ensemble.
+ */
 export const REFRESH_COOKIE_MAX_AGE_MS = env.jwt.refreshExpiresIn
   ? parseDurationToMs(env.jwt.refreshExpiresIn)
   : REFRESH_MAX_AGE_MS;
@@ -61,7 +65,7 @@ export async function issueTokensInFamily(
       userId,
       familyId,
       tokenHash: hashRefreshToken(refreshToken),
-      expiresAt: new Date(Date.now() + REFRESH_MAX_AGE_MS),
+      expiresAt: new Date(Date.now() + REFRESH_COOKIE_MAX_AGE_MS),
     },
   });
 
@@ -113,7 +117,7 @@ export async function rotateRefreshToken(
         userId,
         familyId,
         tokenHash: hashRefreshToken(refreshToken),
-        expiresAt: new Date(Date.now() + REFRESH_MAX_AGE_MS),
+        expiresAt: new Date(Date.now() + REFRESH_COOKIE_MAX_AGE_MS),
       },
     });
     return true;

@@ -1,6 +1,6 @@
 import { prisma } from "../config/prisma";
 import { getTdFileOrThrow, RequestUser } from "./td.service";
-import { publicListInclude } from "./td.service";
+import { publicListInclude, toPublicTdFile } from "./td.service";
 
 /** Liste les fiches mises en favori par l'utilisateur, les plus recentes d'abord. */
 export async function listFavorites(userId: string) {
@@ -14,7 +14,7 @@ export async function listFavorites(userId: string) {
   // (l'utilisateur doit pouvoir la retirer) mais n'est pas presentee comme
   // consultable : le frontend s'appuie sur le statut pour l'indiquer.
   return favorites.map((favorite) => ({
-    ...favorite.tdFile,
+    ...toPublicTdFile(favorite.tdFile),
     isFavorite: true,
     favoritedAt: favorite.createdAt,
   }));

@@ -1,8 +1,8 @@
 # Plateforme de gestion des fiches de TD — UFR
 
 Monorepo npm workspaces : `backend` (Node/Express/TypeScript/Prisma) et
-`frontend` (React/Vite/TypeScript/Tailwind). Version MVP complète (voir
-"Fonctionnalités" ci-dessous) — prête à être installée et utilisée.
+`frontend` (React/Vite/TypeScript/Tailwind). Voir
+« Fonctionnalités » ci-dessous.
 
 ## Prérequis
 
@@ -58,78 +58,75 @@ premier lancement.
 - Frontend : ouvrir `http://localhost:5173`, se connecter avec un compte de
   démonstration ci-dessus, ou créer un nouveau compte.
 
-## Fonctionnalités livrées (MVP)
+## Fonctionnalités
 
-- **Authentification & rôles** : inscription (étudiant avec choix
-  formation/niveau, ou enseignant), connexion, déconnexion, restauration de
-  session via refresh token (cookie httpOnly), mots de passe hashés
-  (bcrypt), routes protégées par rôle côté backend (jamais seulement côté
-  frontend).
+- **Authentification & rôles** : inscription, connexion, déconnexion, mots de
+  passe hashés (bcrypt), routes protégées par rôle côté backend (jamais
+  seulement côté frontend).
+  - Un compte étudiant (avec choix formation/niveau) est actif immédiatement.
+  - Un compte enseignant est créé inactif : un administrateur doit le valider
+    depuis « Utilisateurs » avant la première connexion.
+- **Sessions** : access token de 15 min renouvelé automatiquement, refresh
+  token en cookie httpOnly avec rotation et détection de rejeu. Désactiver un
+  compte ou changer un mot de passe ferme les sessions ouvertes.
 - **Structure pédagogique** (admin) : CRUD formations, niveaux, semestres,
   années universitaires, matières.
-- **Fiches de TD** : publication par l'enseignant (PDF + image de
-  couverture optionnelle, validation du type de fichier par signature
-  binaire et pas seulement par extension), modification, suppression,
-  workflow de statut (brouillon → en attente → publiée/refusée).
+- **Fiches de TD** : dépôt par l'enseignant (PDF + image de couverture
+  optionnelle, type de fichier vérifié par signature binaire et pas seulement
+  par extension), suppression, workflow de statut (brouillon → en attente →
+  publiée/refusée). Une fiche publiée modifiée par son enseignant repasse en
+  attente de validation.
 - **Validation** (admin) : liste des fiches en attente, valider (publication
   immédiate) ou refuser avec commentaire.
-- **Catalogue public** : recherche (titre, description, matière,
-  enseignant), filtres (formation, niveau, semestre, matière, année),
-  pagination.
-- **Lecteur PDF intégré** + téléchargement (URL signée temporaire, jamais
-  d'accès direct au fichier ; le compteur de téléchargements et
-  l'historique sont enregistrés).
+- **Catalogue** : recherche (titre, description, matière, enseignant), filtres
+  (formation, niveau, semestre, matière, année), pagination. Un étudiant ne
+  voit que les fiches de sa filière.
+- **Lecteur PDF intégré** + téléchargement, réservés aux utilisateurs
+  connectés. Le bucket de stockage est privé : le backend transmet lui-même le
+  fichier après avoir revérifié le compte et la fiche, à l'aide d'un jeton de
+  120 secondes. Les téléchargements sont comptés et historisés.
+- **Favoris**, **historique de téléchargement** et **notifications** (fiche
+  publiée, validée ou refusée, signalement traité).
+- **Signalements** : tout utilisateur connecté peut signaler une fiche
+  publiée ; l'administration traite ou classe le signalement.
 - **Tableaux de bord** étudiant, enseignant (fiches publiées/en attente/
   refusées, téléchargements, fiches populaires) et administrateur
-  (utilisateurs, fiches, téléchargements, fiches les plus téléchargées).
-- **Gestion des utilisateurs** (admin) : liste, activation/désactivation de
-  compte.
-- **Interface** : responsive, mode sombre, toasts de succès/erreur, états
-  de chargement/vide gérés partout.
+  (utilisateurs, fiches, téléchargements, signalements en attente).
+- **Gestion des utilisateurs** (admin) : liste, validation des enseignants,
+  activation/désactivation de compte.
+- **Limites de débit** : par route (connexion, inscription, envoi de fichiers,
+  consultation des PDF, signalements), en plus d'un plafond global.
+- **Interface** : responsive, mode sombre, toasts de succès/erreur, états de
+  chargement/vide gérés partout.
 
-Reportées après cette première version (comme convenu dans le plan) :
-favoris, historique de téléchargement, notifications, signalements,
-statistiques avancées, recommandations — les pages correspondantes existent
-déjà dans la navigation avec un message "à venir" pour ne pas casser les
-liens prévus dans le cahier des charges.
+## Vérifications
 
-## Limitations connues de cet environnement de développement (sandbox Claude)
+```bash
+npm run test --workspace backend    # tests unitaires (vitest)
+npm run lint --workspace backend    # eslint
+npm run build:backend               # compilation TypeScript
+npm run lint --workspace frontend   # oxlint
+npm run build:frontend              # compilation TypeScript + build Vite
+```
 
-Ce projet a été développé et vérifié autant que possible dans un
-environnement cloud isolé qui n'a pas d'accès réseau complet. Deux étapes
-n'ont donc pas pu être testées de bout en bout ici, mais fonctionneront
-normalement sur votre machine ou en CI avec un accès internet standard :
+Il n'y a pas encore de tests côté frontend.
 
-1. **`npx prisma generate`** échoue dans ce bac à sable car son réseau
-   sortant bloque `binaries.prisma.sh` (le CDN qui distribue le moteur
-   Prisma). Le schéma (`backend/prisma/schema.prisma`) a été relu
-   attentivement et le code qui l'utilise a été vérifié autant que possible
-   sans le client généré.
-2. **MinIO** n'a pas pu être démarré dans ce bac à sable (pas de démon
-   Docker disponible). Le code d'upload/téléchargement utilise le SDK AWS
-   S3 standard (`@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`)
-   selon des patterns éprouvés, mais n'a pas pu être exécuté contre un vrai
-   bucket ici.
+## Mise en production
 
-Ce qui a été vérifié dans ce bac à sable :
-- Le code TypeScript compile sans erreur sur tout le backend et le
-  frontend (à l'exception des quelques imports qui dépendent du client
-  Prisma généré — attendu tant que `prisma generate` n'a pas tourné).
-- Le frontend build en production sans erreur et le serveur de
-  développement démarre et sert l'application.
-- PostgreSQL a été démarré localement dans ce bac à sable et la chaîne de
-  connexion `DATABASE_URL` par défaut s'y connecte avec succès.
-- Les schémas de validation (Zod) ont été testés à l'exécution
-  (inscription étudiant/enseignant, filtres de recherche).
+- Définir `NODE_ENV=production` et des valeurs aléatoires d'au moins 32
+  caractères, différentes l'une de l'autre, pour `JWT_ACCESS_SECRET` et
+  `JWT_REFRESH_SECRET` : le backend refuse de démarrer sinon.
+- Appliquer les migrations avec `npx prisma migrate deploy` (et non
+  `prisma migrate dev`, réservé au développement).
+- Placer le backend derrière un reverse proxy : `trust proxy` est réglé sur
+  un seul saut (voir `backend/src/app.ts`).
 
-**Recommandation** : après avoir suivi "Démarrage rapide" ci-dessus sur
-votre machine, testez le parcours complet (inscription enseignant →
-connexion → ajout d'une fiche → soumission → connexion admin → validation
-→ connexion étudiant → recherche/téléchargement) et signalez tout
-comportement inattendu — je corrigerai rapidement.
+## Pas encore fait
 
-## Prochaines étapes suggérées
-
-Favoris, historique de téléchargement, notifications, signalements,
-statistiques avancées (voir `docs/architecture-et-plan.md` dans le projet
-Claude pour le détail).
+- L'image de couverture d'une fiche est enregistrée à l'envoi mais n'est
+  affichée nulle part.
+- L'API permet de modifier une fiche ou de remplacer son PDF, mais aucun
+  écran ne le propose encore.
+- Le modèle `Category`, le statut `VALIDATED` et le type de notification
+  `TD_NEEDS_CHANGES` existent dans le schéma sans être utilisés.
+- Statistiques avancées et recommandations.

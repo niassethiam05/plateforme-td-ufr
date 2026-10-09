@@ -21,13 +21,31 @@ export const publicListInclude = {
   },
   // select (jamais "include: { user: true }") : ce endpoint est public et ne
   // doit jamais renvoyer passwordHash ou d'autres champs sensibles du User.
+  // L'email n'en fait pas partie : le catalogue est lisible sans connexion et
+  // exposerait l'adresse de chaque enseignant a n'importe quel visiteur.
   teacher: {
     include: {
-      user: { select: { id: true, email: true, firstName: true, lastName: true, role: true, avatarUrl: true } },
+      user: { select: { id: true, firstName: true, lastName: true, role: true, avatarUrl: true } },
     },
   },
   academicYear: true,
 } satisfies Prisma.TdFileInclude;
+
+/**
+ * Retire d'une fiche les cles de stockage avant de l'envoyer au client. Le
+ * bucket est prive et les fichiers ne sortent que par les routes de flux,
+ * donc le client n'a aucun usage de ces cles ; elles revelent en revanche la
+ * structure interne du stockage.
+ *
+ * A appliquer a toute fiche renvoyee dans une reponse. Les fonctions du
+ * service gardent l'objet complet en interne (le flux a besoin de fileKey).
+ */
+export function toPublicTdFile<T extends { fileKey: string; coverImageKey: string | null }>(
+  tdFile: T
+): Omit<T, "fileKey" | "coverImageKey"> {
+  const { fileKey: _fileKey, coverImageKey: _coverImageKey, ...rest } = tdFile;
+  return rest;
+}
 
 const DIACRITICS_REGEX = /[̀-ͯ]/g;
 
@@ -173,7 +191,7 @@ export async function listTdFiles(query: TdFileQuery, requester?: RequestUser) {
   const favoriteIds = requester ? await getFavoriteIds(requester.id, items.map((item) => item.id)) : new Set<string>();
 
   return {
-    items: items.map((item) => ({ ...item, isFavorite: favoriteIds.has(item.id) })),
+    items: items.map((item) => ({ ...toPublicTdFile(item), isFavorite: favoriteIds.has(item.id) })),
     total,
     page: query.page,
     pageSize: query.pageSize,
@@ -301,7 +319,12 @@ async function notifyAdminsOfPendingTdFile(
       : `"${tdFile.title}" a été modifiée par ${teacherName} après publication et doit être revalidée.`;
 
   try {
-    const admins = await prisma.user.findMany({ where: { role: Role.ADMIN }, select: { id: true } });
+    // Actifs seulement : un admin desactive ne peut plus se connecter pour
+    // lire ses notifications.
+    const admins = await prisma.user.findMany({
+      where: { role: Role.ADMIN, isActive: true },
+      select: { id: true },
+    });
     await Promise.all(
       admins.map((admin) =>
         createNotification({

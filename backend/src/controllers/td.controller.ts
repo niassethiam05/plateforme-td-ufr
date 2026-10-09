@@ -16,7 +16,7 @@ export async function listTdFiles(req: Request, res: Response) {
 }
 
 export async function getTdFile(req: Request, res: Response) {
-  res.json(await tdService.getTdFileOrThrow(req.params.id, req.user));
+  res.json(tdService.toPublicTdFile(await tdService.getTdFileOrThrow(req.params.id, req.user)));
 }
 
 export async function createTdFile(req: Request, res: Response) {
@@ -41,12 +41,12 @@ export async function createTdFile(req: Request, res: Response) {
       : undefined,
   });
 
-  res.status(201).json(tdFile);
+  res.status(201).json(tdService.toPublicTdFile(tdFile));
 }
 
 export async function updateTdFile(req: Request, res: Response) {
   const tdFile = await tdService.updateTdFile(req.params.id, req.user!, req.body);
-  res.json(tdFile);
+  res.json(tdService.toPublicTdFile(tdFile));
 }
 
 export async function replaceTdFilePdf(req: Request, res: Response) {
@@ -60,7 +60,7 @@ export async function replaceTdFilePdf(req: Request, res: Response) {
     mimetype: pdf.mimetype,
     size: pdf.size,
   });
-  res.json(tdFile);
+  res.json(tdService.toPublicTdFile(tdFile));
 }
 
 export async function deleteTdFile(req: Request, res: Response) {
@@ -69,12 +69,12 @@ export async function deleteTdFile(req: Request, res: Response) {
 }
 
 export async function submitTdFile(req: Request, res: Response) {
-  res.json(await tdService.submitTdFile(req.params.id, req.user!));
+  res.json(tdService.toPublicTdFile(await tdService.submitTdFile(req.params.id, req.user!)));
 }
 
 export async function decideTdFile(req: Request, res: Response) {
   const { approve, adminComment } = req.body as { approve: boolean; adminComment?: string };
-  res.json(await tdService.decideTdFile(req.params.id, approve, adminComment));
+  res.json(tdService.toPublicTdFile(await tdService.decideTdFile(req.params.id, approve, adminComment)));
 }
 
 /**

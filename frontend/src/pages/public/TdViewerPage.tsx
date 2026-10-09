@@ -63,8 +63,15 @@ export function TdViewerPage() {
       setReportOpen(false);
       setReportDescription("");
       setReportReason(REPORT_REASONS[0]);
-    } catch {
-      toastError("Impossible d'envoyer ce signalement pour le moment.");
+    } catch (err) {
+      // 409 : signalement deja en cours sur cette fiche. Le backend l'explique,
+      // on affiche son message plutot qu'un echec generique.
+      const alreadyReported =
+        isAxiosError(err) && err.response?.status === 409
+          ? (err.response.data as { message?: string } | undefined)?.message
+          : undefined;
+      toastError(alreadyReported ?? "Impossible d'envoyer ce signalement pour le moment.");
+      if (alreadyReported) setReportOpen(false);
     }
   }
 
@@ -142,13 +149,22 @@ export function TdViewerPage() {
             <div>{td.downloadCount} téléchargement(s)</div>
           </dl>
 
-          <button
-            type="button"
-            onClick={handleDownload}
-            className="mt-4 w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-          >
-            Télécharger le PDF
-          </button>
+          {isAuthenticated ? (
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="mt-4 w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              Télécharger le PDF
+            </button>
+          ) : (
+            <Link
+              to="/connexion"
+              className="mt-4 block w-full rounded-lg bg-brand-600 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              Se connecter pour télécharger
+            </Link>
+          )}
 
           {isAuthenticated && (
             <button

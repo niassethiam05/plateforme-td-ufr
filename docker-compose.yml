@@ -38,8 +38,9 @@ services:
 
   # Cree automatiquement le bucket utilise par le backend au demarrage.
   # Le bucket reste prive : aucun acces anonyme n'est accorde. Les fichiers
-  # sont servis exclusivement via des URLs signees generees par le backend
-  # (voir StorageProvider.getSignedUrl), apres verification du role/statut.
+  # sont lus uniquement par le backend, qui les transmet lui-meme au
+  # navigateur apres verification du role/statut (voir
+  # StorageProvider.getObjectStream). Le navigateur n'accede jamais a MinIO.
   minio-init:
     image: minio/mc:latest
     depends_on:

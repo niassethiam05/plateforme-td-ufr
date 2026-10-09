@@ -29,6 +29,10 @@ const REFRESH_COOKIE_OPTIONS = {
   maxAge: REFRESH_COOKIE_MAX_AGE_MS,
 };
 
+// Memes attributs sans maxAge : clearCookie fixe lui-meme l'expiration, et
+// lui passer maxAge est deprecie (ignore a partir d'Express 5).
+const { maxAge: _maxAge, ...REFRESH_COOKIE_CLEAR_OPTIONS } = REFRESH_COOKIE_OPTIONS;
+
 /**
  * Inscription.
  *
@@ -81,7 +85,7 @@ export async function logout(req: Request, res: Response) {
       // cookie suffit et le client est deconnecte dans tous les cas.
     }
   }
-  res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
+  res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_CLEAR_OPTIONS);
   res.status(204).send();
 }
 
@@ -128,7 +132,7 @@ export async function refresh(req: Request, res: Response) {
 
   if (stored.expiresAt.getTime() <= Date.now()) {
     await revokeFamily(stored.familyId);
-    res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
+    res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_CLEAR_OPTIONS);
     throw new UnauthorizedError("Session expirée, veuillez vous reconnecter");
   }
 
@@ -140,7 +144,7 @@ export async function refresh(req: Request, res: Response) {
   // porte une ancienne version de session : meme controle que requireAuth.
   if (!user || !user.isActive || (payload.sv ?? 0) !== user.sessionVersion) {
     await revokeFamily(stored.familyId);
-    res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
+    res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_CLEAR_OPTIONS);
     throw new UnauthorizedError("Session expirée, veuillez vous reconnecter");
   }
 
@@ -155,7 +159,7 @@ export async function refresh(req: Request, res: Response) {
     if (!(await isConcurrentRefresh(stored.id, stored.familyId))) {
       // Rejeu d'un token deja consomme : toute la famille est compromise.
       await revokeFamily(stored.familyId);
-      res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
+      res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_CLEAR_OPTIONS);
       throw new UnauthorizedError("Session révoquée pour sécurité, veuillez vous reconnecter");
     }
     // Deux onglets ont presente le meme jeton au meme moment : celui-ci a
