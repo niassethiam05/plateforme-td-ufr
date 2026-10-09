@@ -14,7 +14,27 @@ function required(name: string, fallback?: string): string {
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 4000),
-  clientUrl: process.env.CLIENT_URL ?? "http://localhost:5173",
+  // Adresse publique du site : origine autorisee par CORS et base des liens
+  // envoyes par email. RENDER_EXTERNAL_URL est fournie automatiquement par
+  // Render (https://<service>.onrender.com) ; CLIENT_URL la remplace des
+  // qu'un nom de domaine propre est branche.
+  clientUrl:
+    process.env.CLIENT_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:5173",
+
+  // Nombre de reverse proxys entre Internet et ce processus (voir app.ts).
+  trustProxy: Number(process.env.TRUST_PROXY ?? 1),
+
+  // En production, le backend sert aussi les pages du site (frontend/dist) :
+  // un seul service a heberger, et pages et API partagent la meme origine,
+  // ce dont dependent le cookie de session et les appels a /api.
+  serveFrontend: process.env.SERVE_FRONTEND === "true",
+
+  // Creation du premier administrateur au demarrage (voir
+  // services/bootstrapAdmin.service). Sans effet des qu'un admin existe.
+  bootstrapAdmin: {
+    email: process.env.ADMIN_EMAIL || undefined,
+    password: process.env.ADMIN_PASSWORD || undefined,
+  },
 
   databaseUrl: required("DATABASE_URL"),
 

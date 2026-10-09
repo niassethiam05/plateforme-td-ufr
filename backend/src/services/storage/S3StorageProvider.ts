@@ -24,6 +24,11 @@ export class S3StorageProvider implements StorageProvider {
       endpoint: env.storage.endpoint,
       region: env.storage.region,
       forcePathStyle: env.storage.forcePathStyle,
+      // Les versions recentes du SDK ajoutent par defaut une somme de controle
+      // a chaque requete, que certains stockages compatibles S3 (hors AWS) ne
+      // gerent pas tous. On ne l'envoie que lorsque l'operation l'exige.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
       credentials: {
         accessKeyId: env.storage.accessKeyId,
         secretAccessKey: env.storage.secretAccessKey,

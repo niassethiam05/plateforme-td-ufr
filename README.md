@@ -116,6 +116,13 @@ Il n'y a pas encore de tests côté frontend.
 
 ## Mise en production
 
+La marche à suivre complète (Render, Neon, Cloudflare R2) est dans
+[`docs/deploiement.md`](docs/deploiement.md). `npm run build` construit tout
+le projet et `npm run start` applique les migrations puis démarre le serveur,
+qui sert alors l'API et les pages du site (`SERVE_FRONTEND=true`).
+
+Points généraux, quel que soit l'hébergeur :
+
 - Définir `NODE_ENV=production` et des valeurs aléatoires d'au moins 32
   caractères, différentes l'une de l'autre, pour `JWT_ACCESS_SECRET` et
   `JWT_REFRESH_SECRET` : le backend refuse de démarrer sinon.
@@ -125,8 +132,11 @@ Il n'y a pas encore de tests côté frontend.
   publique du site, car elle sert à construire le lien envoyé.
 - Appliquer les migrations avec `npx prisma migrate deploy` (et non
   `prisma migrate dev`, réservé au développement).
-- Placer le backend derrière un reverse proxy : `trust proxy` est réglé sur
-  un seul saut (voir `backend/src/app.ts`).
+- Régler `TRUST_PROXY` sur le nombre de reverse proxys placés devant le
+  backend (1 par défaut), pour que les limites de débit voient l'adresse du
+  visiteur.
+- Créer le premier administrateur avec `ADMIN_EMAIL` et `ADMIN_PASSWORD`, et
+  ne jamais lancer le seed de démonstration sur la base de production.
 
 ## Pas encore fait
 

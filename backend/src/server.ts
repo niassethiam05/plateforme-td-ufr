@@ -2,6 +2,7 @@ import { createApp } from "./app";
 import { env } from "./config/env";
 import { purgeExpiredRefreshTokens } from "./services/token.service";
 import { purgeExpiredPasswordResetTokens } from "./services/passwordReset.service";
+import { bootstrapAdmin } from "./services/bootstrapAdmin.service";
 
 const app = createApp();
 
@@ -22,6 +23,9 @@ purgeExpiredRefreshTokens()
 purgeExpiredPasswordResetTokens().catch((err) =>
   console.error("Echec du nettoyage des liens de reinitialisation:", err)
 );
+
+// Premier administrateur d'une installation neuve (ADMIN_EMAIL/ADMIN_PASSWORD).
+bootstrapAdmin().catch((err) => console.error("Echec de la creation de l'administrateur:", err));
 
 const purgeTimer = setInterval(() => {
   purgeExpiredRefreshTokens().catch((err) =>
