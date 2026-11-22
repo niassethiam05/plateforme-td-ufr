@@ -2,7 +2,7 @@ import { Prisma, Role, TdFileStatus } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { storageProvider } from "./storage/S3StorageProvider";
 import { createManyNotifications, createNotification } from "./notification.service";
-import { ForbiddenError, NotFoundError } from "../utils/AppError";
+import { ConflictError, ForbiddenError, NotFoundError } from "../utils/AppError";
 import { CreateTdFileInput, TdFileQuery, UpdateTdFileInput } from "../validators/td.validators";
 
 export interface UploadedFiles {
@@ -284,6 +284,51 @@ async function assertCanEdit(id: string, requester: RequestUser) {
   return tdFile;
 }
 
+const PENDING_LOCKED_MESSAGE =
+  "Cette fiche est en cours de validation : elle ne peut pas être modifiée avant la décision de l'administration.";
+
+/**
+ * Une fiche PENDING est figee pour son enseignant. L'administrateur valide ce
+ * qu'il a relu : si l'enseignant pouvait changer le titre ou remplacer le PDF
+ * pendant la relecture, la validation publierait un contenu que personne n'a
+ * vu. L'administrateur, lui, garde la main (c'est le validateur).
+ */
+function assertNotLockedForReview(tdFile: { status: TdFileStatus }, requester: RequestUser) {
+  if (requester.role !== "ADMIN" && tdFile.status === TdFileStatus.PENDING) {
+    throw new ConflictError(PENDING_LOCKED_MESSAGE);
+  }
+}
+
+/**
+ * Met a jour la fiche seulement si son statut est toujours celui lu au debut
+ * de l'operation. Entre la lecture et l'ecriture (plusieurs secondes pour un
+ * envoi de PDF), la fiche a pu etre soumise ou validee : sans cette condition,
+ * une modification commencee sur un brouillon atterrirait sur une fiche deja
+ * en attente, voire publiee.
+ */
+async function updateIfStatusUnchanged(
+  id: string,
+  expectedStatus: TdFileStatus,
+  data: Prisma.TdFileUncheckedUpdateInput,
+  conflictMessage: string
+) {
+  try {
+    return await prisma.tdFile.update({
+      where: { id, status: expectedStatus },
+      data,
+      include: publicListInclude,
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      throw new ConflictError(conflictMessage);
+    }
+    throw err;
+  }
+}
+
+const STATUS_CHANGED_MESSAGE =
+  "Le statut de cette fiche vient de changer. Rechargez la page avant de réessayer.";
+
 /**
  * Une fiche PUBLISHED modifiee par son enseignant repasse en attente de
  * validation. La publication atteste que l'administration a relu CE contenu :
@@ -342,13 +387,15 @@ async function notifyAdminsOfPendingTdFile(
 
 export async function updateTdFile(id: string, requester: RequestUser, input: UpdateTdFileInput) {
   const tdFile = await assertCanEdit(id, requester);
+  assertNotLockedForReview(tdFile, requester);
   const revalidation = revalidationData(tdFile, requester);
 
-  const updated = await prisma.tdFile.update({
-    where: { id },
-    data: { ...input, ...revalidation },
-    include: publicListInclude,
-  });
+  const updated = await updateIfStatusUnchanged(
+    id,
+    tdFile.status,
+    { ...input, ...revalidation },
+    STATUS_CHANGED_MESSAGE
+  );
 
   if (revalidation) await notifyAdminsOfPendingTdFile(updated, "modified");
   return updated;
@@ -356,22 +403,34 @@ export async function updateTdFile(id: string, requester: RequestUser, input: Up
 
 export async function replaceTdFilePdf(id: string, requester: RequestUser, file: UploadedFiles["file"]) {
   const tdFile = await assertCanEdit(id, requester);
+  assertNotLockedForReview(tdFile, requester);
   const revalidation = revalidationData(tdFile, requester);
   const key = `td-files/${tdFile.subjectId}/${Date.now()}-${slugifyKeyPart(tdFile.title)}.pdf`;
   const upload = await storageProvider.upload({ buffer: file.buffer, key, contentType: file.mimetype });
 
-  await storageProvider.delete(tdFile.fileKey).catch(() => undefined);
+  let updated;
+  try {
+    updated = await updateIfStatusUnchanged(
+      id,
+      tdFile.status,
+      {
+        fileKey: upload.key,
+        fileSize: upload.size,
+        fileType: upload.contentType,
+        ...revalidation,
+      },
+      STATUS_CHANGED_MESSAGE
+    );
+  } catch (err) {
+    // La fiche garde son ancien PDF : le nouveau fichier ne sert a rien.
+    await storageProvider.delete(upload.key).catch(() => undefined);
+    throw err;
+  }
 
-  const updated = await prisma.tdFile.update({
-    where: { id },
-    data: {
-      fileKey: upload.key,
-      fileSize: upload.size,
-      fileType: upload.contentType,
-      ...revalidation,
-    },
-    include: publicListInclude,
-  });
+  // L'ancien fichier n'est supprime qu'une fois la base a jour : dans l'ordre
+  // inverse, un echec de l'ecriture laissait la fiche pointer vers un fichier
+  // efface.
+  await storageProvider.delete(tdFile.fileKey).catch(() => undefined);
 
   if (revalidation) await notifyAdminsOfPendingTdFile(updated, "modified");
   return updated;
@@ -392,11 +451,12 @@ export async function submitTdFile(id: string, requester: RequestUser) {
   if (tdFile.status !== TdFileStatus.DRAFT && tdFile.status !== TdFileStatus.REJECTED) {
     throw new ForbiddenError("Seule une fiche en brouillon ou refusée peut être soumise");
   }
-  const updated = await prisma.tdFile.update({
-    where: { id },
-    data: { status: TdFileStatus.PENDING, adminComment: null },
-    include: publicListInclude,
-  });
+  const updated = await updateIfStatusUnchanged(
+    id,
+    tdFile.status,
+    { status: TdFileStatus.PENDING, adminComment: null },
+    STATUS_CHANGED_MESSAGE
+  );
 
   await notifyAdminsOfPendingTdFile(updated, "submitted");
 
@@ -411,13 +471,16 @@ export async function decideTdFile(id: string, approve: boolean, adminComment?: 
     throw new ForbiddenError("Seule une fiche en attente peut être validée ou refusée");
   }
 
-  const updated = await prisma.tdFile.update({
-    where: { id },
-    data: approve
+  // Conditionnel : deux administrateurs qui decident en meme temps ne
+  // produisent qu'une seule decision (et une seule serie de notifications).
+  const updated = await updateIfStatusUnchanged(
+    id,
+    TdFileStatus.PENDING,
+    approve
       ? { status: TdFileStatus.PUBLISHED, publishedAt: new Date(), adminComment: adminComment ?? null }
       : { status: TdFileStatus.REJECTED, adminComment: adminComment ?? null },
-    include: publicListInclude,
-  });
+    "Cette fiche a déjà fait l'objet d'une décision. Rechargez la page."
+  );
 
   // Notifie l'enseignant de la decision (best-effort, voir commentaire ci-dessus).
   await createNotification({

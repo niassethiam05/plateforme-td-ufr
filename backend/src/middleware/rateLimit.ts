@@ -1,6 +1,94 @@
 import crypto from "crypto";
 import { Request } from "express";
 import rateLimit from "express-rate-limit";
+import { verifyAccessToken, verifyFileToken, verifyRefreshToken } from "../utils/jwt";
+
+/*
+ * Pourquoi la plupart des cles sont par COMPTE et non par IP : sur un campus,
+ * tous les etudiants sortent par la meme adresse (NAT du Wi-Fi). Une limite
+ * par IP y devient une limite commune a toute l'UFR : quelques dizaines
+ * d'etudiants l'epuisent en usage normal, et un seul etudiant malveillant peut
+ * la vider expres pour bloquer tout le monde.
+ *
+ * Le compte n'est retenu que si son jeton est authentique (signature
+ * verifiee, un simple calcul HMAC sans acces a la base). Un jeton fabrique
+ * retombe sur l'IP : sinon un attaquant pourrait choisir sa cle a volonte,
+ * soit pour echapper a la limite, soit pour epuiser celle d'un autre compte.
+ */
+
+function ipKey(req: Request): string {
+  return `ip:${req.ip ?? "anonymous"}`;
+}
+
+/** Compte porte par un access token valide dans l'en-tete Authorization. */
+function bearerUserId(req: Request): string | undefined {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) return undefined;
+  try {
+    const payload = verifyAccessToken(header.slice(7));
+    // Un jeton de fichier partage la cle de signature : il n'identifie pas
+    // une session (voir requireAuth).
+    return payload.purpose ? undefined : payload.sub;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Compte porte par un cookie de refresh token authentique. */
+function refreshCookieUserId(req: Request): string | undefined {
+  const cookie = (req.cookies as Record<string, unknown> | undefined)?.refreshToken;
+  if (typeof cookie !== "string" || !cookie) return undefined;
+  try {
+    return verifyRefreshToken(cookie).sub;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Cle du plafond global : le compte connecte (access token, sinon cookie de
+ * session), et l'IP seulement pour les visiteurs anonymes.
+ */
+export function apiClientKey(req: Request): string {
+  const userId = bearerUserId(req) ?? refreshCookieUserId(req);
+  return userId ? `user:${userId}` : ipKey(req);
+}
+
+/**
+ * Cle des routes de flux PDF : elles n'ont pas d'en-tete Authorization, le
+ * compte est lu dans le jeton de fichier passe en query string.
+ */
+export function fileStreamKey(req: Request): string {
+  const token = req.query.token;
+  if (typeof token === "string" && token) {
+    try {
+      return `user:${verifyFileToken(token).sub}`;
+    } catch {
+      // Jeton invalide ou expire : cle IP, la requete sera refusee ensuite.
+    }
+  }
+  return ipKey(req);
+}
+
+/** Cle des routes deja protegees par requireAuth. */
+function authenticatedUserKey(req: Request): string {
+  return req.user ? `user:${req.user.id}` : ipKey(req);
+}
+
+/**
+ * Garde-fou global sur toute l'API : il vise les flots anormaux, pas l'usage
+ * normal ; les operations reellement couteuses (upload, PDF, signalements,
+ * auth) ont leurs propres limiteurs plus serres. 1000 requetes / 15 min par
+ * compte connecte, ou par IP pour les visiteurs anonymes.
+ */
+export const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: apiClientKey,
+  message: { error: "TooManyRequests", message: "Trop de requêtes, veuillez réessayer." },
+});
 
 /**
  * Limite les envois de fichiers (creation et remplacement du PDF d'une
@@ -35,20 +123,32 @@ export const uploadLimiter = rateLimit({
  * stockage tout en gonflant des compteurs de statistiques qui n'ont plus
  * aucun sens.
  *
- * 120 par 5 minutes correspond a ~60 consultations de PDF, soit largement la
- * navigation normale d'un catalogue tout en bloquant les boucles. La cle est
- * l'IP : la requete de flux n'a pas d'en-tete Authorization, donc req.user n'y
- * est pas encore connu.
+ * 60 par 5 minutes et par compte, sur chacune des deux etapes : largement la
+ * navigation normale d'un catalogue, tout en bloquant les boucles. Deux
+ * limiteurs distincts parce que la cle ne se lit pas au meme endroit : apres
+ * requireAuth pour l'emission, dans le jeton de fichier pour le flux.
  */
-export const fileAccessLimiter = rateLimit({
+const FILE_ACCESS_MESSAGE = {
+  error: "TooManyRequests",
+  message: "Trop de demandes de consultation, veuillez réessayer dans quelques minutes.",
+};
+
+export const fileIssueLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
-  limit: 120,
+  limit: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    error: "TooManyRequests",
-    message: "Trop de demandes de consultation, veuillez réessayer dans quelques minutes.",
-  },
+  keyGenerator: authenticatedUserKey,
+  message: FILE_ACCESS_MESSAGE,
+});
+
+export const fileStreamLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: fileStreamKey,
+  message: FILE_ACCESS_MESSAGE,
 });
 
 function loginEmail(req: Request): string {
@@ -193,13 +293,15 @@ export const sessionLimiter = rateLimit({
  * (voir report.service) : une seule requete utilisateur produit donc N
  * ecritures. Un etudiant connecte en boucle peut remplir la file de
  * traitement des signalements de l'administration et saturer la base.
- * 10 par heure laisse largement le temps de signaler plusieurs fiches.
+ * 10 par heure et par compte laisse largement le temps de signaler plusieurs
+ * fiches.
  */
 export const reportLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: authenticatedUserKey,
   message: {
     error: "TooManyRequests",
     message: "Vous avez atteint la limite de signalements pour cette heure.",

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Role, TdFileStatus } from "@prisma/client";
+import { Prisma, Role, TdFileStatus } from "@prisma/client";
 import type { TdFileQuery } from "../../validators/td.validators";
-import { ForbiddenError, NotFoundError } from "../../utils/AppError";
+import { ConflictError, ForbiddenError, NotFoundError } from "../../utils/AppError";
 
 // vi.hoisted : les mocks doivent exister avant que vi.mock() (qui est
 // lui-meme hoiste en haut du fichier par vitest) ne s'execute.
@@ -38,12 +38,14 @@ vi.mock("../notification.service", () => ({
 
 // Import APRES les vi.mock() : td.service.ts doit recevoir les modules mockes.
 import {
+  decideTdFile,
   finalizeDownload,
   finalizeView,
   getTdFileOrThrow,
   listTdFiles,
   prepareDownload,
   replaceTdFilePdf,
+  submitTdFile,
   updateTdFile,
 } from "../td.service";
 import { createNotification } from "../notification.service";
@@ -294,5 +296,98 @@ describe("td.service — telechargement : droits verifies deux fois (emission pu
 
     expect(prismaMock.tdFile.update).toHaveBeenCalledTimes(1);
     expect(prismaMock.tdFile.update.mock.calls[0][0].data.viewCount).toEqual({ increment: 1 });
+  });
+});
+
+/** Erreur renvoyee par Prisma quand la condition du `where` d'un update ne correspond plus. */
+function recordNotFound() {
+  return new Prisma.PrismaClientKnownRequestError("Record to update not found.", {
+    code: "P2025",
+    clientVersion: "5.22.0",
+  });
+}
+
+describe("td.service — fiche figee pendant la validation", () => {
+  const teacher = { id: "teacher-user-1", role: Role.TEACHER };
+  const admin = { id: "admin-1", role: Role.ADMIN };
+  const pdf = { buffer: Buffer.from("%PDF-"), mimetype: "application/pdf", size: 5 };
+
+  beforeEach(() => {
+    prismaMock.teacher.findUnique.mockResolvedValue({ id: "teacher-1" });
+    prismaMock.tdFile.update.mockImplementation(async ({ data }) => baseTdFile(data));
+    prismaMock.user.findMany.mockResolvedValue([{ id: "admin-1" }]);
+    storageMock.upload.mockResolvedValue({ key: "new.pdf", size: 10, contentType: "application/pdf" });
+    storageMock.delete.mockResolvedValue(undefined);
+  });
+
+  it("un enseignant ne peut pas modifier une fiche en attente de validation", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.PENDING }));
+
+    await expect(updateTdFile("td-1", teacher, { title: "Autre titre" })).rejects.toThrow(ConflictError);
+    expect(prismaMock.tdFile.update).not.toHaveBeenCalled();
+  });
+
+  it("un enseignant ne peut pas remplacer le PDF d'une fiche en attente, rien n'est envoye au stockage", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.PENDING }));
+
+    await expect(replaceTdFilePdf("td-1", teacher, pdf)).rejects.toThrow(ConflictError);
+    expect(storageMock.upload).not.toHaveBeenCalled();
+    expect(prismaMock.tdFile.update).not.toHaveBeenCalled();
+  });
+
+  it("un admin peut corriger une fiche en attente", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.PENDING }));
+
+    await updateTdFile("td-1", admin, { title: "Titre corrige" });
+
+    expect(prismaMock.tdFile.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("l'ecriture n'a lieu que si le statut est toujours celui lu au depart", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.DRAFT }));
+
+    await updateTdFile("td-1", teacher, { title: "Nouveau titre" });
+
+    expect(prismaMock.tdFile.update.mock.calls[0][0].where).toEqual({ id: "td-1", status: TdFileStatus.DRAFT });
+  });
+
+  it("fiche soumise pendant l'envoi du PDF : 409, nouveau fichier supprime, ancien conserve", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.DRAFT }));
+    prismaMock.tdFile.update.mockRejectedValue(recordNotFound());
+
+    await expect(replaceTdFilePdf("td-1", teacher, pdf)).rejects.toThrow(ConflictError);
+    expect(storageMock.delete).toHaveBeenCalledTimes(1);
+    expect(storageMock.delete).toHaveBeenCalledWith("new.pdf");
+  });
+
+  it("l'ancien PDF n'est supprime qu'apres la mise a jour de la fiche", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.DRAFT }));
+
+    await replaceTdFilePdf("td-1", teacher, pdf);
+
+    expect(storageMock.delete).toHaveBeenCalledWith("key.pdf");
+    expect(prismaMock.tdFile.update.mock.invocationCallOrder[0]).toBeLessThan(
+      storageMock.delete.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("une soumission concurrente deja passee renvoie 409 sans renotifier les admins", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.DRAFT }));
+    prismaMock.tdFile.update.mockRejectedValue(recordNotFound());
+
+    await expect(submitTdFile("td-1", teacher)).rejects.toThrow(ConflictError);
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  it("deux decisions simultanees : la seconde renvoie 409 et ne notifie personne", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile({ status: TdFileStatus.PENDING }));
+    prismaMock.tdFile.update.mockRejectedValue(recordNotFound());
+
+    await expect(decideTdFile("td-1", true)).rejects.toThrow(ConflictError);
+    expect(prismaMock.tdFile.update.mock.calls[0][0].where).toEqual({
+      id: "td-1",
+      status: TdFileStatus.PENDING,
+    });
+    expect(createNotification).not.toHaveBeenCalled();
   });
 });

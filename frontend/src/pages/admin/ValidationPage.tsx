@@ -7,6 +7,11 @@ import { useDecideTdFile, useTdFiles } from "../../services/td";
 import { toastError, toastSuccess } from "../../store/useToastStore";
 import type { TdFile } from "../../types";
 
+/** Message renvoye par l'API (par exemple : fiche deja traitee par un autre administrateur). */
+function apiMessage(err: unknown, fallback: string): string {
+  return (err as { response?: { data?: { message?: string } } }).response?.data?.message ?? fallback;
+}
+
 export function ValidationPage() {
   const { data, isLoading } = useTdFiles({ status: "PENDING", pageSize: 50 });
   const decide = useDecideTdFile();
@@ -17,8 +22,8 @@ export function ValidationPage() {
     try {
       await decide.mutateAsync({ id, approve: true });
       toastSuccess("Fiche validée et publiée.");
-    } catch {
-      toastError("Impossible de valider cette fiche.");
+    } catch (err) {
+      toastError(apiMessage(err, "Impossible de valider cette fiche."));
     }
   }
 
@@ -29,8 +34,8 @@ export function ValidationPage() {
       toastSuccess("Fiche refusée, l'enseignant a été informé.");
       setRejecting(null);
       setComment("");
-    } catch {
-      toastError("Impossible de refuser cette fiche.");
+    } catch (err) {
+      toastError(apiMessage(err, "Impossible de refuser cette fiche."));
     }
   }
 

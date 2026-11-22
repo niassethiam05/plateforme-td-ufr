@@ -78,7 +78,8 @@ premier lancement.
   optionnelle, type de fichier vérifié par signature binaire et pas seulement
   par extension), suppression, workflow de statut (brouillon → en attente →
   publiée/refusée). Une fiche publiée modifiée par son enseignant repasse en
-  attente de validation.
+  attente de validation, et une fiche en attente ne peut plus être modifiée
+  par son enseignant avant la décision.
 - **Validation** (admin) : liste des fiches en attente, valider (publication
   immédiate) ou refuser avec commentaire.
 - **Catalogue** : recherche (titre, description, matière, enseignant), filtres
@@ -98,7 +99,9 @@ premier lancement.
 - **Gestion des utilisateurs** (admin) : liste, validation des enseignants,
   activation/désactivation de compte.
 - **Limites de débit** : par route (connexion, inscription, envoi de fichiers,
-  consultation des PDF, signalements), en plus d'un plafond global.
+  consultation des PDF, signalements), en plus d'un plafond global. Elles
+  comptent par compte connecté, pour que les étudiants d'un même réseau
+  (Wi-Fi du campus) ne partagent pas un seul compteur.
 - **Interface** : responsive, mode sombre, toasts de succès/erreur, états de
   chargement/vide gérés partout.
 

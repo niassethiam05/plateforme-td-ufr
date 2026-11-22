@@ -6,10 +6,10 @@ import helmet from "helmet";
 import morgan from "morgan";
 import path from "path";
 import cookieParser from "cookie-parser";
-import rateLimit from "express-rate-limit";
 import { env } from "./config/env";
 import routes from "./routes";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
+import { apiLimiter } from "./middleware/rateLimit";
 
 // Depuis backend/dist (ou backend/src en developpement) vers frontend/dist.
 const FRONTEND_DIST_DIR = path.resolve(__dirname, "../../frontend/dist");
@@ -54,25 +54,9 @@ export function createApp() {
   app.use(morgan(env.nodeEnv === "development" ? LOG_FORMAT_DEV : LOG_FORMAT_PROD));
 
   // Garde-fou global : plafonne toute l'API, pas seulement les routes
-  // explicitement protegees ci-dessous. Sans lui, le catalogue public et les
-  // routes de lecture n'ont aucune limite et restent des points d'entree
-  // gratuits pour saturer la base.
-  //
-  // Le quota est volontairement large (1000 / 15 min, soit ~66 requetes/min)
-  // parce qu'il est clef par IP : sur un campus, les etudiants passent par un
-  // NAT et partagent une seule adresse. Une limite etroite ferait plafonner
-  // tout l'UFR d'un coup — exactement l'effet deny de service qu'on cherche a
-  // eviter. Ce garde-fou vise les flots anormaux, pas
-  // l'usage normal ; les operations reellement couteuses (upload, apercu de
-  // PDF, signalements, auth) ont leurs propres limiteurs plus serres.
-  const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 1000,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: "TooManyRequests", message: "Trop de requêtes, veuillez réessayer." },
-  });
-  app.use("/api", globalLimiter);
+  // explicitement protegees. Compte par compte connecte (IP pour les
+  // visiteurs anonymes) : voir middleware/rateLimit.
+  app.use("/api", apiLimiter);
 
   // Les routes d'authentification ont leurs propres limiteurs, poses route
   // par route dans auth.routes.ts (voir middleware/rateLimit). Un plafond
