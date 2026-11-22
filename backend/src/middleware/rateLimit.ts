@@ -307,3 +307,24 @@ export const reportLimiter = rateLimit({
     message: "Vous avez atteint la limite de signalements pour cette heure.",
   },
 });
+/**
+ * Limite les ECHECS du changement de mot de passe depuis le profil.
+ *
+ * Cette route compare le mot de passe actuel : sans limite, une session volee
+ * (onglet laisse ouvert sur un poste de la salle informatique) permet de
+ * deviner le mot de passe a volonte, puis de le changer pour prendre le
+ * compte. 5 erreurs par 15 minutes et par compte ; les changements reussis
+ * ne sont pas comptes.
+ */
+export const passwordChangeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: authenticatedUserKey,
+  message: {
+    error: "TooManyRequests",
+    message: "Trop d'essais de mot de passe, veuillez réessayer dans quelques minutes.",
+  },
+});

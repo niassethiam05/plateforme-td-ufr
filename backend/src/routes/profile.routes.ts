@@ -1,6 +1,7 @@
 import { Router } from "express";
 import * as controller from "../controllers/profile.controller";
 import { requireAuth } from "../middleware/auth";
+import { passwordChangeLimiter } from "../middleware/rateLimit";
 import { validateBody } from "../middleware/validate";
 import { changePasswordSchema, updateProfileSchema } from "../validators/profile.validators";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -14,6 +15,7 @@ router.patch("/", requireAuth, validateBody(updateProfileSchema), asyncHandler(c
 router.patch(
   "/password",
   requireAuth,
+  passwordChangeLimiter,
   validateBody(changePasswordSchema),
   asyncHandler(controller.changePassword)
 );

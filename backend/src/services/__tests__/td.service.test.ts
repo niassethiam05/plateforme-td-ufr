@@ -17,7 +17,7 @@ const prismaMock = vi.hoisted(() => ({
   student: { findUnique: vi.fn(), findMany: vi.fn() },
   teacher: { findUnique: vi.fn() },
   favorite: { findMany: vi.fn() },
-  download: { create: vi.fn() },
+  download: { create: vi.fn(), findFirst: vi.fn() },
   subject: { findUnique: vi.fn() },
   user: { findMany: vi.fn() },
   $transaction: vi.fn(),
@@ -266,6 +266,21 @@ describe("td.service — telechargement : droits verifies deux fois (emission pu
 
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     expect(target.fileKey).toBe("key.pdf");
+  });
+
+  it("finalizeDownload ne recompte pas un retelechargement recent : le jeton rejoue ne gonfle pas le compteur", async () => {
+    prismaMock.tdFile.findUnique.mockResolvedValue(baseTdFile());
+    prismaMock.student.findUnique.mockResolvedValue({ formationId: "formation-A" });
+    prismaMock.download.findFirst.mockResolvedValueOnce({ id: "dl-recent" });
+
+    const target = await finalizeDownload("td-1", { id: "student-1", role: Role.STUDENT });
+
+    // Le fichier est servi, mais rien n'est enregistre.
+    expect(target.fileKey).toBe("key.pdf");
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    const where = prismaMock.download.findFirst.mock.calls[0][0].where;
+    expect(where).toMatchObject({ userId: "student-1", tdFileId: "td-1" });
+    expect(where.downloadedAt.gte).toBeInstanceOf(Date);
   });
 
   it("finalizeDownload refuse si la fiche a ete retiree entre l'emission du lien et le flux", async () => {

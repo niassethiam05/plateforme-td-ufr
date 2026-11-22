@@ -29,7 +29,9 @@ export type BootstrapAdminResult =
  * (et devrait) etre retire de la configuration.
  */
 export async function bootstrapAdmin(): Promise<BootstrapAdminResult> {
-  const { email, password } = env.bootstrapAdmin;
+  const { password } = env.bootstrapAdmin;
+  // Meme normalisation que l'inscription (voir emailField).
+  const email = env.bootstrapAdmin.email?.trim().toLowerCase();
   if (!email || !password) return "skipped-not-configured";
 
   const existingAdmins = await prisma.user.count({ where: { role: Role.ADMIN } });

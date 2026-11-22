@@ -1,16 +1,17 @@
 import { z } from "zod";
+import { MAX_LENGTH } from "./fields";
 
 export const createTdFileSchema = z.object({
-  title: z.string().min(1, "Le titre est requis"),
-  description: z.string().optional(),
+  title: z.string().trim().min(1, "Le titre est requis").max(MAX_LENGTH.title, "Titre trop long"),
+  description: z.string().max(MAX_LENGTH.description, "Description trop longue").optional(),
   subjectId: z.string().uuid("Matière invalide"),
   academicYearId: z.string().uuid("Année universitaire invalide"),
   tdNumber: z.coerce.number().int().positive().optional(),
 });
 
 export const updateTdFileSchema = z.object({
-  title: z.string().min(1).optional(),
-  description: z.string().optional(),
+  title: z.string().trim().min(1).max(MAX_LENGTH.title, "Titre trop long").optional(),
+  description: z.string().max(MAX_LENGTH.description, "Description trop longue").optional(),
   subjectId: z.string().uuid().optional(),
   academicYearId: z.string().uuid().optional(),
   tdNumber: z.coerce.number().int().positive().optional(),
@@ -20,11 +21,11 @@ export const updateTdFileSchema = z.object({
 // fiche repasse a l'enseignant, qui peut corriger et resoumettre).
 export const decideTdFileSchema = z.object({
   approve: z.boolean(),
-  adminComment: z.string().optional(),
+  adminComment: z.string().max(MAX_LENGTH.comment, "Commentaire trop long").optional(),
 });
 
 export const tdFileQuerySchema = z.object({
-  search: z.string().optional(),
+  search: z.string().max(MAX_LENGTH.search, "Recherche trop longue").optional(),
   formationId: z.string().uuid().optional(),
   levelId: z.string().uuid().optional(),
   semesterId: z.string().uuid().optional(),

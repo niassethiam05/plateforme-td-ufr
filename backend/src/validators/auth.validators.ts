@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { emailField, existingPasswordField, MAX_LENGTH, newPasswordField } from "./fields";
 
 /**
  * Transforme "" en absent avant validation.
@@ -25,10 +26,10 @@ function emptyStringAsUndefined<T extends z.ZodTypeAny>(schema: T) {
  */
 export const registerSchema = z
   .object({
-    email: z.string().email("Email invalide"),
-    password: z.string().min(8, "Le mot de passe doit contenir au moins 8 caracteres"),
-    firstName: z.string().min(1, "Le prenom est requis"),
-    lastName: z.string().min(1, "Le nom est requis"),
+    email: emailField,
+    password: newPasswordField("Le mot de passe doit contenir au moins 8 caracteres"),
+    firstName: z.string().trim().min(1, "Le prenom est requis").max(MAX_LENGTH.name, "Prénom trop long"),
+    lastName: z.string().trim().min(1, "Le nom est requis").max(MAX_LENGTH.name, "Nom trop long"),
     role: z.enum(["STUDENT", "TEACHER"]).default("STUDENT"),
     // Requis uniquement pour un etudiant (voir refine ci-dessous) : permet
     // de rattacher immediatement le compte a la bonne formation/niveau.
@@ -51,18 +52,18 @@ export const registerSchema = z
   });
 
 export const loginSchema = z.object({
-  email: z.string().email("Email invalide"),
-  password: z.string().min(1, "Le mot de passe est requis"),
+  email: emailField,
+  password: existingPasswordField("Le mot de passe est requis"),
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email("Email invalide"),
+  email: emailField,
 });
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1, "Lien de réinitialisation manquant").max(200),
   // Meme regle qu'a l'inscription et qu'au changement depuis le profil.
-  newPassword: z.string().min(8, "Le mot de passe doit contenir au moins 8 caracteres"),
+  newPassword: newPasswordField("Le mot de passe doit contenir au moins 8 caracteres"),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

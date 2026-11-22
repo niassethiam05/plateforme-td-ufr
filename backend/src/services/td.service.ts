@@ -574,6 +574,14 @@ export async function prepareView(id: string, requester?: RequestUser): Promise<
 }
 
 /**
+ * Un meme compte qui retelecharge la meme fiche dans cet intervalle n'est
+ * compte qu'une fois. Le jeton de fichier reste valable 120 s et peut etre
+ * rejoue : sans cette regle, une boucle sur une seule URL gonflait le compteur
+ * (et le classement des fiches populaires) d'une unite par requete.
+ */
+export const DOWNLOAD_DEDUP_WINDOW_MS = 10 * 60 * 1000;
+
+/**
  * Etape 2 : cote flux, avant d'envoyer le premier octet. Les droits sont
  * verifies une nouvelle fois - c'est ici que la desactivation d'un compte ou
  * le retrait de la fiche ont un effet, quelle que soit la date d'emission de
@@ -583,10 +591,22 @@ export async function prepareView(id: string, requester?: RequestUser): Promise<
 export async function finalizeDownload(id: string, requester: RequestUser): Promise<FileTarget> {
   const target = await resolveDownloadTarget(id, requester);
 
-  await prisma.$transaction([
-    prisma.download.create({ data: { userId: requester.id, tdFileId: id } }),
-    prisma.tdFile.update({ where: { id }, data: { downloadCount: { increment: 1 } } }),
-  ]);
+  const recent = await prisma.download.findFirst({
+    where: {
+      userId: requester.id,
+      tdFileId: id,
+      downloadedAt: { gte: new Date(Date.now() - DOWNLOAD_DEDUP_WINDOW_MS) },
+    },
+    select: { id: true },
+  });
+
+  // Le fichier est servi dans tous les cas ; seul le comptage est saute.
+  if (!recent) {
+    await prisma.$transaction([
+      prisma.download.create({ data: { userId: requester.id, tdFileId: id } }),
+      prisma.tdFile.update({ where: { id }, data: { downloadCount: { increment: 1 } } }),
+    ]);
+  }
 
   return target;
 }

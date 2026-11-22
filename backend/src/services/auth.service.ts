@@ -33,8 +33,21 @@ type AuthUserRecord = Prisma.UserGetPayload<{ include: typeof authUserInclude }>
  * faire tant que l'admin n'a pas valide, donc lui rendre une session serait
  * trompeur.
  */
+/**
+ * Recherche d'un compte par email, sans tenir compte de la casse. Les emails
+ * sont enregistres en minuscules (emailField), mais un compte cree avant cette
+ * regle peut encore en contenir une majuscule si la migration a du l'epargner
+ * (doublon de casse) : il doit rester joignable.
+ */
+function findUserByEmail(email: string) {
+  return prisma.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
+    include: authUserInclude,
+  });
+}
+
 export async function registerUser(input: RegisterInput) {
-  const existing = await prisma.user.findUnique({ where: { email: input.email } });
+  const existing = await findUserByEmail(input.email);
   if (existing) {
     throw new ConflictError("Un compte existe deja avec cet email");
   }
@@ -82,7 +95,7 @@ export async function registerUser(input: RegisterInput) {
 }
 
 export async function loginUser(input: LoginInput) {
-  const user = await prisma.user.findUnique({ where: { email: input.email }, include: authUserInclude });
+  const user = await findUserByEmail(input.email);
   if (!user || !user.isActive) {
     // Message unique pour les trois cas (compte inexistant, compte desactive,
     // enseignant en attente de validation) : les distinguer permettrait

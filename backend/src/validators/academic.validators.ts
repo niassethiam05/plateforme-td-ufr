@@ -1,14 +1,15 @@
 import { z } from "zod";
+import { MAX_LENGTH } from "./fields";
 
 export const formationSchema = z.object({
-  name: z.string().min(1, "Le nom est requis"),
-  code: z.string().min(1, "Le code est requis"),
-  description: z.string().optional(),
+  name: z.string().trim().min(1, "Le nom est requis").max(MAX_LENGTH.title, "Nom trop long"),
+  code: z.string().trim().min(1, "Le code est requis").max(MAX_LENGTH.code, "Code trop long"),
+  description: z.string().max(MAX_LENGTH.description, "Description trop longue").optional(),
 });
 
 export const levelSchema = z.object({
   formationId: z.string().uuid("Formation invalide"),
-  name: z.string().min(1, "Le nom est requis"),
+  name: z.string().trim().min(1, "Le nom est requis").max(MAX_LENGTH.name, "Nom trop long"),
   order: z.number().int().default(0),
 });
 
@@ -22,16 +23,16 @@ export const academicYearSchema = z.object({
 export const semesterSchema = z.object({
   levelId: z.string().uuid("Niveau invalide"),
   academicYearId: z.string().uuid("Année universitaire invalide"),
-  name: z.string().min(1, "Le nom est requis"),
+  name: z.string().trim().min(1, "Le nom est requis").max(MAX_LENGTH.name, "Nom trop long"),
   order: z.number().int().default(0),
 });
 
 export const subjectSchema = z.object({
   semesterId: z.string().uuid("Semestre invalide"),
-  name: z.string().min(1, "Le nom est requis"),
-  code: z.string().optional(),
+  name: z.string().trim().min(1, "Le nom est requis").max(MAX_LENGTH.title, "Nom trop long"),
+  code: z.string().trim().max(MAX_LENGTH.code, "Code trop long").optional(),
   mainTeacherId: z.string().uuid().optional().nullable(),
-  description: z.string().optional(),
+  description: z.string().max(MAX_LENGTH.description, "Description trop longue").optional(),
 });
 
 export type FormationInput = z.infer<typeof formationSchema>;

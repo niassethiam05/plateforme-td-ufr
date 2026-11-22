@@ -61,8 +61,8 @@ premier lancement.
 ## Fonctionnalités
 
 - **Authentification & rôles** : inscription, connexion, déconnexion, mots de
-  passe hashés (bcrypt), routes protégées par rôle côté backend (jamais
-  seulement côté frontend).
+  passe hashés (bcrypt, 8 à 72 caractères), emails enregistrés en minuscules,
+  routes protégées par rôle côté backend (jamais seulement côté frontend).
   - Un compte étudiant (avec choix formation/niveau) est actif immédiatement.
   - Un compte enseignant est créé inactif : un administrateur doit le valider
     depuis « Utilisateurs » avant la première connexion.
@@ -88,7 +88,8 @@ premier lancement.
 - **Lecteur PDF intégré** + téléchargement, réservés aux utilisateurs
   connectés. Le bucket de stockage est privé : le backend transmet lui-même le
   fichier après avoir revérifié le compte et la fiche, à l'aide d'un jeton de
-  120 secondes. Les téléchargements sont comptés et historisés.
+  120 secondes. Les téléchargements sont comptés et historisés ; une même fiche
+  retéléchargée par le même compte n'est comptée qu'une fois par 10 minutes.
 - **Favoris**, **historique de téléchargement** et **notifications** (fiche
   publiée, validée ou refusée, signalement traité).
 - **Signalements** : tout utilisateur connecté peut signaler une fiche
@@ -98,8 +99,9 @@ premier lancement.
   (utilisateurs, fiches, téléchargements, signalements en attente).
 - **Gestion des utilisateurs** (admin) : liste, validation des enseignants,
   activation/désactivation de compte.
-- **Limites de débit** : par route (connexion, inscription, envoi de fichiers,
-  consultation des PDF, signalements), en plus d'un plafond global. Elles
+- **Limites de débit** : par route (connexion, inscription, changement de mot
+  de passe, envoi de fichiers, consultation des PDF, signalements), en plus
+  d'un plafond global. Elles
   comptent par compte connecté, pour que les étudiants d'un même réseau
   (Wi-Fi du campus) ne partagent pas un seul compteur.
 - **Interface** : responsive, mode sombre, toasts de succès/erreur, états de
