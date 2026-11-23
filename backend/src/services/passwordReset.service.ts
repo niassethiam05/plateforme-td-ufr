@@ -1,4 +1,4 @@
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { prisma } from "../config/prisma";
 import { env } from "../config/env";

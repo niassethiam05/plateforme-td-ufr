@@ -9,7 +9,7 @@
  * executes, et que MinIO/PostgreSQL tournent — voir docker-compose.yml).
  */
 import "../src/config/env";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { prisma } from "../src/config/prisma";
 import { storageProvider } from "../src/services/storage/S3StorageProvider";

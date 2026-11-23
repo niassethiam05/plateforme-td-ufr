@@ -1,4 +1,4 @@
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { Role } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { env } from "../config/env";

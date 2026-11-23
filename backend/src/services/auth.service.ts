@@ -1,4 +1,4 @@
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { AppError, ConflictError, UnauthorizedError } from "../utils/AppError";

@@ -11,7 +11,7 @@
  * rien a faire en production.
  */
 import "../src/config/env";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { Role, TdFileStatus } from "@prisma/client";
 import { prisma } from "../src/config/prisma";
 

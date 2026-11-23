@@ -52,12 +52,13 @@ docker run --rm -v "$(pwd -W)/loadtest:/scripts" \
 Poste : Intel Core i5-1145G7, Postgres et MinIO dans Docker. Node n'utilise
 qu'un cœur pour le code du site.
 
-| Étudiants simultanés | Erreurs du site | Temps de réponse (95 %) | Connexion (95 %) |
-|---|---|---|---|
-| 200 | 0 | 0,59 s | 2,4 s |
-| 300 | 0 | 2,8 s | 5,3 s |
+| Étudiants simultanés | Hachage | Erreurs du site | Temps de réponse (95 %) | Connexion (95 %) |
+|---|---|---|---|---|
+| 200 | bcryptjs | 0 | 0,59 s | 2,4 s |
+| 300 | bcryptjs | 0 | 2,8 s | 5,3 s |
+| 300 | bcrypt (natif) | 0 | 0,15 s | 0,86 s |
 
-Les quelques « dial: i/o timeout » (0,3 %) viennent du réseau de Docker
+Les quelques « dial: i/o timeout » (0,3 à 0,5 %) viennent du réseau de Docker
 Desktop : une sonde lancée en parallèle depuis Windows n'a eu aucun échec.
 
 **Le goulot d'étranglement est la connexion.** Le hachage bcrypt d'un mot de
@@ -66,9 +67,15 @@ une rafale de connexions (début de séance de TD), tout le site ralentit.
 Une fois les 300 étudiants connectés, le serveur traite 62 requêtes par
 seconde avec un temps de réponse de 16 à 22 ms.
 
+Correction (2026-11-23) : `bcryptjs`, écrit en JavaScript, a été remplacé par
+`bcrypt`, natif, qui calcule dans des fils séparés sans bloquer le reste du
+site. Les hachages existants restent valides. Pendant la vague de
+connexions, la sonde ne dépasse plus 0,23 s (contre 2,3 s avant).
+
 Sur le plan gratuit de Render, le processeur est bien plus faible que celui
-de ce poste : il faut s'attendre à des connexions de plusieurs secondes dès
-quelques dizaines d'étudiants qui se connectent dans la même minute.
+de ce poste : une connexion y reste plus lente, et les fils de calcul s'y
+partagent le même processeur. Le gain y est donc plus faible qu'ici (non
+mesuré sur Render).
 
 Le test a aussi révélé un défaut, corrigé depuis : les flux PDF étaient
 comptés par adresse IP dans le plafond global, donc partagés par tout le
