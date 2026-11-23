@@ -8,3 +8,6 @@ build/
 backend/uploads/
 backend/generated/
 frontend/dist/
+
+# Resultats des tests de charge (k6 --summary-export)
+loadtest/resultat-*.json

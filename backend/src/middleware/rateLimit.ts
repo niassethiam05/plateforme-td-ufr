@@ -46,28 +46,36 @@ function refreshCookieUserId(req: Request): string | undefined {
 }
 
 /**
- * Cle du plafond global : le compte connecte (access token, sinon cookie de
- * session), et l'IP seulement pour les visiteurs anonymes.
+ * Compte porte par un jeton de fichier authentique en query string : les
+ * routes de flux PDF n'ont ni en-tete Authorization ni cookie de session.
  */
-export function apiClientKey(req: Request): string {
-  const userId = bearerUserId(req) ?? refreshCookieUserId(req);
-  return userId ? `user:${userId}` : ipKey(req);
+function fileTokenUserId(req: Request): string | undefined {
+  const token = req.query.token;
+  if (typeof token !== "string" || !token) return undefined;
+  try {
+    return verifyFileToken(token).sub;
+  } catch {
+    // Jeton invalide ou expire : la requete sera refusee ensuite.
+    return undefined;
+  }
 }
 
 /**
- * Cle des routes de flux PDF : elles n'ont pas d'en-tete Authorization, le
- * compte est lu dans le jeton de fichier passe en query string.
+ * Cle du plafond global : le compte connecte (access token, cookie de
+ * session, ou jeton de fichier sur les flux PDF), et l'IP seulement pour les
+ * visiteurs anonymes. Sans le jeton de fichier, tous les flux PDF d'un campus
+ * tombaient sur une seule cle IP et epuisaient le plafond ensemble (constate
+ * au test de charge : refus 429 au-dela de 1000 PDF ouverts en 15 min).
  */
+export function apiClientKey(req: Request): string {
+  const userId = bearerUserId(req) ?? refreshCookieUserId(req) ?? fileTokenUserId(req);
+  return userId ? `user:${userId}` : ipKey(req);
+}
+
+/** Cle des routes de flux PDF : le compte du jeton de fichier. */
 export function fileStreamKey(req: Request): string {
-  const token = req.query.token;
-  if (typeof token === "string" && token) {
-    try {
-      return `user:${verifyFileToken(token).sub}`;
-    } catch {
-      // Jeton invalide ou expire : cle IP, la requete sera refusee ensuite.
-    }
-  }
-  return ipKey(req);
+  const userId = fileTokenUserId(req);
+  return userId ? `user:${userId}` : ipKey(req);
 }
 
 /** Cle des routes deja protegees par requireAuth. */

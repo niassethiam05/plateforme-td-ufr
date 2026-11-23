@@ -64,6 +64,16 @@ describe("rateLimit — cles par compte plutot que par IP (NAT du campus)", () =
     expect(apiClientKey(makeReq({ ip: "1.2.3.4" }))).toBe("ip:1.2.3.4");
   });
 
+  it("plafond global : un flux PDF compte pour le compte du jeton de fichier, pas pour l'IP du campus", () => {
+    const fileToken = signFileToken({ sub: "user-1", sv: 0, tdId: "td-1", scope: "view", purpose: "file" });
+    expect(apiClientKey(makeReq({ query: { token: fileToken }, ip: "1.2.3.4" }))).toBe("user:user-1");
+  });
+
+  it("plafond global : un jeton de fichier fabrique en query string retombe sur l'IP", () => {
+    const forged = jwt.sign({ sub: "victime", purpose: "file" }, "autre-secret");
+    expect(apiClientKey(makeReq({ query: { token: forged }, ip: "1.2.3.4" }))).toBe("ip:1.2.3.4");
+  });
+
   it("flux PDF : la cle est le compte du jeton de fichier", () => {
     const fileToken = signFileToken({ sub: "user-1", sv: 0, tdId: "td-1", scope: "view", purpose: "file" });
     expect(fileStreamKey(makeReq({ query: { token: fileToken } }))).toBe("user:user-1");
